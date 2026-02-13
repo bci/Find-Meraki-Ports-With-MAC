@@ -1,8 +1,7 @@
 # Sample Run
 
 ```
-$ Find-Meraki-Ports-With-MAC-windows-amd64.exe --mac 00:11:22:33:44:55 --org "My Organization"
-PS C:\Users\kent\dev\clients\bci\find-switch-for-mac> C:\Users\kent\dev\clients\bci\find-switch-for-mac\bin\Find-Meraki-Ports-With-MAC-windows-amd64.exe --mac 00:11:22:33:44:55 --org "My Organization" --verbose --log-level info
+$ $bin\Find-Meraki-Ports-With-MAC-windows-amd64.exe --mac 00:11:22:33:44:55 --org "My Organization" --verbose --log-level info
 2026-02-13T12:40:23-08:00 [INFO] MAC: 00:11:22:33:44:55
 2026-02-13T12:40:23-08:00 [INFO] Organization: My Organization
 2026-02-13T12:40:24-08:00 [INFO] Network: Network1
@@ -120,5 +119,4 @@ PS C:\Users\kent\dev\clients\bci\find-switch-for-mac> C:\Users\kent\dev\clients\
 Org,Network,Switch,Serial,Port,MAC,LastSeen
 My Organization,Network1,switch6,XXXX-XXXX-XXXX,51,00:11:22:33:44:55,
 My Organization,Network5,switch27,XXXX-XXXX-XXXX,54,00:11:22:33:44:55,2026-02-13T15:24:38Z
-PS C:\Users\kent\dev\clients\bci\find-switch-for-mac> 
 ```
