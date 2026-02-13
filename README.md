@@ -98,6 +98,27 @@ Find-Meraki-Ports-With-MAC version 1.0.0
   Repository: https://github.com/bci/Find-Meraki-Ports-With-MAC
 ```
 
+### Sample Output
+
+Running with verbose logging shows the search process across networks and switches:
+
+```
+$ Find-Meraki-Ports-With-MAC.exe --mac 00:11:22:33:44:55 --org "My Organization" --verbose
+2026-02-13T12:40:23-08:00 [INFO] MAC: 00:11:22:33:44:55
+2026-02-13T12:40:23-08:00 [INFO] Organization: My Organization
+2026-02-13T12:40:24-08:00 [INFO] Network: Network1
+2026-02-13T12:40:28-08:00 [INFO] Network clients API returned 1000 clients
+2026-02-13T12:40:28-08:00 [INFO] Querying switch: switch1 (XXXX-XXXX-XXXX)
+2026-02-13T12:41:02-08:00 [INFO] Device clients API returned 0 clients for switch1
+2026-02-13T12:41:02-08:00 [INFO] Querying switch: switch2 (XXXX-XXXX-XXXX)
+2026-02-13T12:41:05-08:00 [INFO] Live MAC table returned 147 entries for switch2
+...
+2026-02-13T12:46:07-08:00 [INFO] Network clients API returned 4 clients
+Org,Network,Switch,Serial,Port,MAC,LastSeen
+My Organization,Network1,switch6,XXXX-XXXX-XXXX,51,00:11:22:33:44:55,
+My Organization,Network5,switch27,XXXX-XXXX-XXXX,54,00:11:22:33:44:55,2026-02-13T15:24:38Z
+```
+
 ### MAC formats
 
 Accepted formats:
