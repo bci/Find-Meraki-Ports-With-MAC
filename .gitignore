@@ -1,0 +1,40 @@
+# Environment files
+.env
+
+# Binaries for programs and plugins
+Find-Meraki-Ports-With-MAC
+Find-Meraki-Ports-With-MAC.exe
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+*.prof
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE specific files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Log files
+*.log
+Find-Meraki-Ports-With-MAC.log
