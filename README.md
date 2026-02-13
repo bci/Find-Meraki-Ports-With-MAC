@@ -169,13 +169,13 @@ Create a `.env` file (see `.env.example`).
 ### From source
 
 ```bash
-go install github.com/BEHRConsulting/Find-Meraki-Ports-With-MAC@latest
+go install github.com/bci/Find-Meraki-Ports-With-MAC@latest
 ```
 
 ### Build from source
 
 ```bash
-git clone https://github.com/BEHRConsulting/Find-Meraki-Ports-With-MAC.git
+git clone https://github.com/bci/Find-Meraki-Ports-With-MAC.git
 cd Find-Meraki-Ports-With-MAC
 go build -o Find-Meraki-Ports-With-MAC.exe .
 ```
@@ -221,4 +221,4 @@ This is free and unencumbered software released into the public domain. See the 
 
 ## Repository
 
-https://github.com/BEHRConsulting/Find-Meraki-Ports-With-MAC
+https://github.com/bci/Find-Meraki-Ports-With-MAC
