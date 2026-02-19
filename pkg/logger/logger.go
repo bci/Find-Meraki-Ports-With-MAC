@@ -64,7 +64,7 @@ func New(logFile string, level LogLevel) *Logger {
 }
 
 func (l *Logger) logf(level LogLevel, label string, format string, args ...interface{}) {
-	if l == nil || level < l.level {
+	if l == nil || !(level >= l.level) {
 		return
 	}
 	timestamp := time.Now().Format(time.RFC3339)

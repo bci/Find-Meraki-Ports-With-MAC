@@ -18,6 +18,8 @@ type ResultRow struct {
 	Port         string
 	MAC          string
 	LastSeen     string
+	IP           string
+	Hostname     string
 }
 
 // WriteCSV writes results in CSV format with headers.
@@ -25,11 +27,11 @@ func WriteCSV(w io.Writer, rows []ResultRow) {
 	writer := csv.NewWriter(w)
 	defer writer.Flush()
 
-	_ = writer.Write([]string{"Org", "Network", "Switch", "Serial", "Port", "MAC", "LastSeen"})
+	_ = writer.Write([]string{"Org", "Network", "Switch", "Serial", "Port", "MAC", "IP", "Hostname", "LastSeen"})
 	for _, row := range rows {
 		_ = writer.Write([]string{
 			row.OrgName, row.NetworkName, row.SwitchName, row.SwitchSerial,
-			row.Port, row.MAC, row.LastSeen,
+			row.Port, row.MAC, row.IP, row.Hostname, row.LastSeen,
 		})
 	}
 }
@@ -41,7 +43,7 @@ func WriteText(w io.Writer, rows []ResultRow) {
 		return
 	}
 
-	headers := []string{"Org", "Network", "Switch", "Serial", "Port", "MAC", "LastSeen"}
+	headers := []string{"Org", "Network", "Switch", "Serial", "Port", "MAC", "IP", "Hostname", "LastSeen"}
 	widths := make([]int, len(headers))
 	for i, h := range headers {
 		widths[i] = len(h)
@@ -53,7 +55,9 @@ func WriteText(w io.Writer, rows []ResultRow) {
 		widths[3] = max(widths[3], len(row.SwitchSerial))
 		widths[4] = max(widths[4], len(row.Port))
 		widths[5] = max(widths[5], len(row.MAC))
-		widths[6] = max(widths[6], len(row.LastSeen))
+		widths[6] = max(widths[6], len(row.IP))
+		widths[7] = max(widths[7], len(row.Hostname))
+		widths[8] = max(widths[8], len(row.LastSeen))
 	}
 
 	separator := strings.Repeat("-", sum(widths)+len(widths)*3-1)
@@ -61,7 +65,7 @@ func WriteText(w io.Writer, rows []ResultRow) {
 	fmt.Fprintln(w, formatRow(headers, widths))
 	fmt.Fprintln(w, separator)
 	for _, row := range rows {
-		values := []string{row.OrgName, row.NetworkName, row.SwitchName, row.SwitchSerial, row.Port, row.MAC, row.LastSeen}
+		values := []string{row.OrgName, row.NetworkName, row.SwitchName, row.SwitchSerial, row.Port, row.MAC, row.IP, row.Hostname, row.LastSeen}
 		fmt.Fprintln(w, formatRow(values, widths))
 	}
 	fmt.Fprintln(w, separator)
@@ -72,18 +76,20 @@ func WriteHTML(w io.Writer, rows []ResultRow) {
 	fmt.Fprintln(w, "<table>")
 	fmt.Fprintln(w, "  <thead>")
 	fmt.Fprintln(w, "    <tr>")
-	fmt.Fprintln(w, "      <th>Org</th><th>Network</th><th>Switch</th><th>Serial</th><th>Port</th><th>MAC</th><th>Last Seen</th>")
+	fmt.Fprintln(w, "      <th>Org</th><th>Network</th><th>Switch</th><th>Serial</th><th>Port</th><th>MAC</th><th>IP</th><th>Hostname</th><th>Last Seen</th>")
 	fmt.Fprintln(w, "    </tr>")
 	fmt.Fprintln(w, "  </thead>")
 	fmt.Fprintln(w, "  <tbody>")
 	for _, row := range rows {
-		fmt.Fprintf(w, "    <tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n",
+		fmt.Fprintf(w, "    <tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n",
 			html.EscapeString(row.OrgName),
 			html.EscapeString(row.NetworkName),
 			html.EscapeString(row.SwitchName),
 			html.EscapeString(row.SwitchSerial),
 			html.EscapeString(row.Port),
 			html.EscapeString(row.MAC),
+			html.EscapeString(row.IP),
+			html.EscapeString(row.Hostname),
 			html.EscapeString(row.LastSeen),
 		)
 	}

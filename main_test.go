@@ -162,3 +162,26 @@ func TestAddResult(t *testing.T) {
 		t.Errorf("addResult() different MAC: got %d results, want 2", len(results))
 	}
 }
+
+func TestResolveHostname(t *testing.T) {
+	// Test with empty IP
+	hostname, err := meraki.ResolveHostname("")
+	if hostname != "" || err != nil {
+		t.Errorf("ResolveHostname(\"\") = (%q, %v), want (\"\", nil)", hostname, err)
+	}
+
+	// Test with invalid IP (should not panic, just return error)
+	hostname, _ = meraki.ResolveHostname("invalid")
+	if hostname != "" {
+		t.Errorf("ResolveHostname(\"invalid\") returned hostname %q, expected empty", hostname)
+	}
+	// Note: err might be nil for invalid IPs that don't cause lookup errors
+
+	// Test with localhost (should work in most environments)
+	_, err = meraki.ResolveHostname("127.0.0.1")
+	// We don't check the exact result since it depends on system configuration
+	// Just ensure it doesn't panic and returns something reasonable
+	if err != nil {
+		t.Logf("ResolveHostname(\"127.0.0.1\") returned error: %v", err)
+	}
+}

@@ -6,7 +6,7 @@
 [![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](http://unlicense.org/)
 [![GitHub release](https://img.shields.io/github/release/bci/Find-Meraki-Ports-With-MAC.svg)](https://github.com/bci/Find-Meraki-Ports-With-MAC/releases)
 
-A Go CLI tool that queries the Meraki Dashboard API to find which switch and port a MAC address is associated with. Supports both Meraki MS switches and Cisco Catalyst switches managed by Meraki.
+A Go CLI tool that queries the Meraki Dashboard API to find which switch and port a MAC address or IP address is associated with. Supports both Meraki MS switches and Cisco Catalyst switches managed by Meraki.
 
 ## Use Cases
 
@@ -20,11 +20,12 @@ This tool helps network administrators quickly locate devices and troubleshoot n
 - **Compliance Audits** - Verify device locations and port assignments match documentation
 
 **Network Troubleshooting:**
-- **Duplicate IP Address Resolution** - Locate devices with conflicting IP addresses by their MAC
+- **Duplicate IP Address Resolution** - Locate devices with conflicting IP addresses by their IP
+- **IP Address Investigation** - Find switch ports for devices by IP address instead of MAC
 - **MAC Flapping Detection** - Find devices appearing on multiple ports (potential network loops or misconfigurations)
 - **Broadcast/Multicast Storm Sources** - Identify the switch port where problematic traffic originates
 - **Network Loop Detection** - Locate ports involved in spanning tree issues or physical loops
-- **Connectivity Troubleshooting** - Verify which port a specific device is connected to
+- **Connectivity Troubleshooting** - Verify which port a specific device is connected to by IP or MAC
 
 **Operations & Inventory:**
 - **VLAN Membership Verification** - Confirm devices are on the correct port and VLAN
@@ -44,17 +45,23 @@ This tool utilizes the following Meraki Dashboard API v1 endpoints:
 - `GET /organizations` - List organizations accessible by the API key
 - `GET /organizations/{organizationId}/networks` - List networks in an organization
 - `GET /networks/{networkId}/devices` - List all devices in a network
-- `GET /networks/{networkId}/clients` - Get network-level client information
+- `GET /networks/{networkId}/clients` - Get network-level client information (includes IP-to-MAC mappings)
 - `GET /devices/{serial}/clients` - Get device-level client information (fallback)
 - `POST /devices/{serial}/liveTools/macTable` - Initiate live MAC table lookup (critical for Catalyst switches)
 - `GET /devices/{serial}/liveTools/macTable/{macTableId}` - Poll for MAC table lookup results
 
-The live MAC table lookup is essential for Cisco Catalyst switches managed by Meraki, as standard client endpoints may have limited visibility.
+The live MAC table lookup is essential for Cisco Catalyst switches managed by Meraki, as standard client endpoints may have limited visibility. The clients API provides IP-to-MAC resolution for IP-based lookups.
 
 ## Usage
 
 ```
 Find-Meraki-Ports-With-MAC.exe --mac 00:11:22:33:44:55 --network ALL --org "My Org" --output-format csv
+```
+
+Find by IP address:
+
+```
+Find-Meraki-Ports-With-MAC.exe --ip 192.168.1.100 --network ALL --org "My Org" --output-format csv
 ```
 
 Filter by switch/port:
@@ -67,6 +74,12 @@ Dump full forwarding table (filtered by switch/port if provided):
 
 ```
 Find-Meraki-Ports-With-MAC.exe --test-full-table --network "City" --switch ccc9300xa
+```
+
+Verbose logging to console:
+
+```
+Find-Meraki-Ports-With-MAC.exe --ip 192.168.1.100 --verbose
 ```
 
 Troubleshooting:
@@ -103,20 +116,19 @@ Find-Meraki-Ports-With-MAC version 1.0.0
 Running with verbose logging shows the search process across networks and switches:
 
 ```
-$ Find-Meraki-Ports-With-MAC.exe --mac 00:11:22:33:44:55 --org "My Organization" --verbose
-2026-02-13T12:40:23-08:00 [INFO] MAC: 00:11:22:33:44:55
-2026-02-13T12:40:23-08:00 [INFO] Organization: My Organization
-2026-02-13T12:40:24-08:00 [INFO] Network: Network1
-2026-02-13T12:40:28-08:00 [INFO] Network clients API returned 1000 clients
-2026-02-13T12:40:28-08:00 [INFO] Querying switch: switch1 (XXXX-XXXX-XXXX)
-2026-02-13T12:41:02-08:00 [INFO] Device clients API returned 0 clients for switch1
-2026-02-13T12:41:02-08:00 [INFO] Querying switch: switch2 (XXXX-XXXX-XXXX)
-2026-02-13T12:41:05-08:00 [INFO] Live MAC table returned 147 entries for switch2
+$ Find-Meraki-Ports-With-MAC.exe --ip 192.168.1.100 --org "My Organization" --verbose
+2026-02-19T12:20:00-08:00 [DEBUG] Resolving IP: 192.168.1.100
+2026-02-19T12:20:05-08:00 [DEBUG] Resolved IP 192.168.1.100 to MAC 40:a6:b7:a5:3b:e0 (hostname: ITCONSOLE.ci.gardena.ca.us)
+2026-02-19T12:20:05-08:00 [DEBUG] Organization: My Organization
+2026-02-19T12:20:05-08:00 [DEBUG] Network: Network1
+2026-02-19T12:20:10-08:00 [DEBUG] Network clients API returned 1000 clients
+2026-02-19T12:20:10-08:00 [DEBUG] Querying switch: switch1 (XXXX-XXXX-XXXX)
+2026-02-19T12:20:45-08:00 [DEBUG] Device clients API returned 0 clients for switch1
+2026-02-19T12:20:45-08:00 [DEBUG] Querying switch: switch2 (XXXX-XXXX-XXXX)
+2026-02-19T12:20:48-08:00 [DEBUG] Live MAC table returned 147 entries for switch2
 ...
-2026-02-13T12:46:07-08:00 [INFO] Network clients API returned 4 clients
-Org,Network,Switch,Serial,Port,MAC,LastSeen
-My Organization,Network1,switch6,XXXX-XXXX-XXXX,51,00:11:22:33:44:55,
-My Organization,Network5,switch27,XXXX-XXXX-XXXX,54,00:11:22:33:44:55,2026-02-13T15:24:38Z
+Org,Network,Switch,Serial,Port,MAC,IP,Hostname,LastSeen
+My Organization,Network1,switch6,XXXX-XXXX-XXXX,51,40:a6:b7:a5:3b:e0,192.168.1.100,ITCONSOLE.ci.gardena.ca.us,2026-02-19T15:24:38Z
 ```
 
 ### MAC formats
@@ -147,8 +159,9 @@ Create a `.env` file (see `.env.example`).
 
 ## Flags
 
-**Required:**
-- --mac: MAC address or wildcard pattern (required unless using list/test flags)
+**Required (one of):**
+- --mac: MAC address or wildcard pattern
+- --ip: IP address to resolve to MAC (mutually exclusive with --mac)
 
 **Filtering:**
 - --org: organization name (default from .env)
@@ -164,7 +177,7 @@ Create a `.env` file (see `.env.example`).
 - --list-networks: list networks per organization
 - --test-api: validate the API key
 - --test-full-table: display all MACs in forwarding table (filters apply)
-- --verbose: show search progress (org, network, switch)
+- --verbose: send DEBUG logs to console (overrides --log-level and --log-file)
 
 **Logging:**
 - --log-file: log file path (default from .env)
@@ -176,6 +189,17 @@ Create a `.env` file (see `.env.example`).
 
 ## Output formats
 
+All output formats include the following columns:
+- Org: Organization name
+- Network: Network name  
+- Switch: Switch name
+- Serial: Switch serial number
+- Port: Port name/number
+- MAC: MAC address
+- IP: IP address (when resolved from --ip flag)
+- Hostname: Resolved hostname (when available)
+- Last Seen: Last seen timestamp
+
 - csv (default)
 - text
 - html
@@ -184,6 +208,9 @@ Create a `.env` file (see `.env.example`).
 
 - This tool uses the Meraki Dashboard API and enumerates switch devices in the selected network(s).
 - Client MAC visibility depends on the Meraki API data available for the switches.
+- IP resolution uses the Meraki clients API to find IP-to-MAC mappings from recent network activity.
+- Hostname resolution performs reverse DNS lookups and may not be available for all IPs.
+- The --ip and --mac flags are mutually exclusive - use one or the other.
 
 ## Installation
 
