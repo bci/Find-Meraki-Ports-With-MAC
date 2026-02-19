@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -54,6 +55,7 @@ type NetworkClient struct {
 	LastSeen           string `json:"lastSeen"`
 	RecentDeviceSerial string `json:"recentDeviceSerial"`
 	RecentDeviceName   string `json:"recentDeviceName"`
+	IP                 string `json:"ip"`
 }
 
 // MerakiClient is an HTTP client wrapper for the Meraki Dashboard API.
@@ -302,6 +304,55 @@ func (m *MerakiClient) doRequest(ctx context.Context, method, fullURL string) ([
 		return body, next, nil
 	}
 	return nil, "", errors.New("meraki API request failed after retries")
+}
+
+// ResolveHostname performs reverse DNS lookup on an IP address.
+// Returns the hostname or empty string if lookup fails.
+func ResolveHostname(ip string) (string, error) {
+	if ip == "" {
+		return "", nil
+	}
+
+	// Use a context with timeout to prevent hanging
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Perform reverse DNS lookup
+	names, err := net.DefaultResolver.LookupAddr(ctx, ip)
+	if err != nil {
+		return "", err
+	}
+
+	if len(names) == 0 {
+		return "", nil
+	}
+
+	// Return the first name, trim trailing dot
+	hostname := strings.TrimSuffix(names[0], ".")
+	return hostname, nil
+}
+
+// ResolveIPToMAC resolves an IP address to MAC address by querying Meraki clients API.
+// Searches across multiple networks and returns the MAC, network ID, and hostname.
+func (c *MerakiClient) ResolveIPToMAC(ctx context.Context, orgID string, networks []Network, ip string) (mac string, networkID string, hostname string, err error) {
+	// First, attempt hostname resolution
+	hostname, _ = ResolveHostname(ip) // Ignore error, hostname is optional
+
+	// Search through each network for the IP
+	for _, network := range networks {
+		clients, err := c.GetNetworkClients(ctx, network.ID)
+		if err != nil {
+			continue // Skip network on error
+		}
+
+		for _, client := range clients {
+			if client.IP == ip {
+				return client.MAC, network.ID, hostname, nil
+			}
+		}
+	}
+
+	return "", "", hostname, errors.New("IP address not found in any network")
 }
 
 // parseLinkNext extracts the next page URL from a Link header.

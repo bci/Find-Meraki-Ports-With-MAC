@@ -34,6 +34,7 @@ type Config struct {
 	SwitchFilter string // Switch name filter
 	PortFilter   string // Port filter
 	TestFull     bool   // Display complete MAC forwarding table
+	IPAddress    string // IP address to resolve
 }
 
 // Version information injected at build time via ldflags.
@@ -53,6 +54,7 @@ func main() {
 	_ = godotenv.Load()
 
 	macFlag := flag.String("mac", "", "MAC address or pattern")
+	ipFlag := flag.String("ip", "", "IP address to resolve to MAC")
 	networkFlag := flag.String("network", "", "Network name or ALL")
 	orgFlag := flag.String("org", "", "Organization name")
 	outputFlag := flag.String("output-format", "", "Output format: csv, text, html")
@@ -60,7 +62,7 @@ func main() {
 	listNetworksFlag := flag.Bool("list-networks", false, "List networks per organization and exit")
 	testAPIFlag := flag.Bool("test-api", false, "Validate API key and exit")
 	testFullTableFlag := flag.Bool("test-full-table", false, "Display all MAC addresses in forwarding table (filtered by --switch/--port)")
-	verboseFlag := flag.Bool("verbose", false, "Show search progress")
+	verboseFlag := flag.Bool("verbose", false, "Send DEBUG logs to console (overrides --log-level and --log-file)")
 	switchFlag := flag.String("switch", "", "Filter by switch name (case-insensitive substring match)")
 	portFlag := flag.String("port", "", "Filter by port name/number")
 	logFileFlag := flag.String("log-file", "", "Log file path")
@@ -84,6 +86,14 @@ func main() {
 		SwitchFilter: strings.TrimSpace(*switchFlag),
 		PortFilter:   strings.TrimSpace(*portFlag),
 		TestFull:     *testFullTableFlag,
+		IPAddress:    strings.TrimSpace(*ipFlag),
+	}
+
+	// If verbose flag is set, override log level to DEBUG and send logs to console
+	if *verboseFlag {
+		cfg.LogLevel = "DEBUG"
+		cfg.LogFile = "" // Empty log file sends logs to console only
+		fmt.Printf("DEBUG: Verbose flag set, LogLevel=%s, LogFile='%s'\n", cfg.LogLevel, cfg.LogFile)
 	}
 
 	if *helpFlag {
@@ -162,47 +172,37 @@ func main() {
 	}
 
 	if cfg.TestFull {
-		if cfg.Verbose {
-			log.Infof("Test full table mode enabled")
-		}
+		log.Debugf("Test full table mode enabled")
 	}
 
-	if strings.TrimSpace(*macFlag) == "" {
+	// Validate mutual exclusivity of --ip and --mac
+	if cfg.IPAddress != "" && strings.TrimSpace(*macFlag) != "" {
+		exitWithError(log, "--ip and --mac are mutually exclusive")
+	}
+
+	if cfg.IPAddress == "" && strings.TrimSpace(*macFlag) == "" {
 		if !cfg.TestFull {
-			exitWithError(log, "--mac is required")
+			exitWithError(log, "--ip or --mac is required")
 		}
 	}
 
-	matcher := func(string) bool { return true }
-	if strings.TrimSpace(*macFlag) != "" {
-		var normalized string
-		var isWildcard bool
-		var err error
-		matcher, normalized, isWildcard, err = macaddr.BuildMacMatcher(*macFlag)
-		if err != nil {
-			exitWithError(log, err.Error())
-		}
-		if cfg.Verbose {
-			if isWildcard {
-				log.Infof("MAC pattern: %s", strings.TrimSpace(*macFlag))
-			} else {
-				log.Infof("MAC: %s", normalized)
-			}
-		}
-	}
-
+	// Get organizations first
 	orgs, err := client.GetOrganizations(ctx)
 	if err != nil {
 		exitWithError(log, err.Error())
+	}
+
+	// Handle single organization auto-selection
+	if len(orgs) == 1 && cfg.OrgName == "" {
+		cfg.OrgName = orgs[0].Name
+		log.Debugf("Auto-selected single organization: %s", cfg.OrgName)
 	}
 
 	org, err := selectOrganization(cfg.OrgName, orgs)
 	if err != nil {
 		exitWithError(log, err.Error())
 	}
-	if cfg.Verbose {
-		log.Infof("Organization: %s", org.Name)
-	}
+	log.Debugf("Organization: %s", org.Name)
 
 	networks, err := client.GetNetworks(ctx, org.ID)
 	if err != nil {
@@ -214,12 +214,47 @@ func main() {
 		exitWithError(log, err.Error())
 	}
 
+	matcher := func(string) bool { return true }
+	var resolvedHostname string
+
+	if cfg.IPAddress != "" {
+		// IP resolution mode
+		log.Debugf("Resolving IP: %s", cfg.IPAddress)
+
+		// Resolve IP to MAC
+		resolvedMAC, _, resolvedHostname, err := client.ResolveIPToMAC(ctx, org.ID, selectedNetworks, cfg.IPAddress)
+		if err != nil {
+			exitWithError(log, fmt.Sprintf("Failed to resolve IP %s: %v", cfg.IPAddress, err))
+		}
+
+		log.Debugf("Resolved IP %s to MAC %s (hostname: %s)", cfg.IPAddress, resolvedMAC, resolvedHostname)
+
+		// Create matcher for the resolved MAC
+		matcher, _, _, err = macaddr.BuildMacMatcher(resolvedMAC)
+		if err != nil {
+			exitWithError(log, err.Error())
+		}
+
+	} else if strings.TrimSpace(*macFlag) != "" {
+		// MAC mode (existing logic)
+		var normalized string
+		var isWildcard bool
+		var err error
+		matcher, normalized, isWildcard, err = macaddr.BuildMacMatcher(*macFlag)
+		if err != nil {
+			exitWithError(log, err.Error())
+		}
+		if isWildcard {
+			log.Debugf("MAC pattern: %s", strings.TrimSpace(*macFlag))
+		} else {
+			log.Debugf("MAC: %s", normalized)
+		}
+	}
+
 	var results []output.ResultRow
 	resultsIndex := make(map[string]struct{})
 	for _, net := range selectedNetworks {
-		if cfg.Verbose {
-			log.Infof("Network: %s", net.Name)
-		}
+		log.Debugf("Network: %s", net.Name)
 
 		// Get all devices for this network
 		devices, err := client.GetDevices(ctx, net.ID)
@@ -242,9 +277,7 @@ func main() {
 		if err != nil {
 			exitWithError(log, err.Error())
 		}
-		if cfg.Verbose {
-			log.Infof("Network clients API returned %d clients", len(networkClients))
-		}
+		log.Debugf("Network clients API returned %d clients", len(networkClients))
 
 		for _, c := range networkClients {
 			normMAC, err := macaddr.NormalizeExactMac(c.MAC)
@@ -284,6 +317,8 @@ func main() {
 					SwitchSerial: serial,
 					Port:         port,
 					MAC:          macaddr.FormatMacColon(normMAC),
+					IP:           c.IP,
+					Hostname:     resolvedHostname, // Only populated for IP resolution mode
 					LastSeen:     c.LastSeen,
 				})
 			}
@@ -291,9 +326,7 @@ func main() {
 
 		// Query device-level clients for each switch
 		for _, dev := range switches {
-			if cfg.Verbose {
-				log.Infof("Querying switch: %s (%s)", firstNonEmpty(dev.Name, dev.Serial), dev.Serial)
-			}
+			log.Debugf("Querying switch: %s (%s)", firstNonEmpty(dev.Name, dev.Serial), dev.Serial)
 
 			// Try live tools MAC table lookup first (works for all switches including Catalyst)
 			macTableID, err := client.CreateMacTableLookup(ctx, dev.Serial)
@@ -325,9 +358,7 @@ func main() {
 				}
 
 				if status == "complete" && len(macEntries) > 0 {
-					if cfg.Verbose {
-						log.Infof("Live MAC table returned %d entries for %s", len(macEntries), firstNonEmpty(dev.Name, dev.Serial))
-					}
+					log.Debugf("Live MAC table returned %d entries for %s", len(macEntries), firstNonEmpty(dev.Name, dev.Serial))
 
 					for _, entry := range macEntries {
 						macStr, _ := entry["mac"].(string)
@@ -372,6 +403,8 @@ func main() {
 								SwitchSerial: dev.Serial,
 								Port:         port,
 								MAC:          macaddr.FormatMacColon(normMAC),
+								IP:           "", // Live MAC table doesn't provide IP info
+								Hostname:     resolvedHostname, // Only populated for IP resolution mode
 								LastSeen:     "",
 							})
 						}
@@ -389,9 +422,7 @@ func main() {
 				continue
 			}
 
-			if cfg.Verbose {
-				log.Infof("Device clients API returned %d clients for %s", len(clients), firstNonEmpty(dev.Name, dev.Serial))
-			}
+			log.Debugf("Device clients API returned %d clients for %s", len(clients), firstNonEmpty(dev.Name, dev.Serial))
 
 			for _, c := range clients {
 				normMAC, err := macaddr.NormalizeExactMac(c.MAC)
@@ -410,6 +441,8 @@ func main() {
 						SwitchSerial: dev.Serial,
 						Port:         port,
 						MAC:          macaddr.FormatMacColon(normMAC),
+						IP:           "", // Device clients API doesn't provide IP info
+						Hostname:     resolvedHostname, // Only populated for IP resolution mode
 						LastSeen:     c.LastSeen,
 					})
 				}
@@ -512,9 +545,10 @@ func printUsage(w *os.File) {
 	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --mac 00:11:22:33:44:55 --network ALL --org \"My Org\" --output-format csv")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Flags:")
+	fmt.Fprintln(w, "  --ip <address>              IP address to resolve to MAC (mutually exclusive with --mac)")
 	fmt.Fprintln(w, "  --mac <mac|pattern>         MAC address or wildcard pattern (required unless using list/test flags)")
 	fmt.Fprintln(w, "  --network <name|ALL>        Network name or ALL (default from .env)")
-	fmt.Fprintln(w, "  --org <name>                Organization name (default from .env)")
+	fmt.Fprintln(w, "  --org <name>                Organization name (optional if only one org accessible)")
 	fmt.Fprintln(w, "  --output-format <csv|text|html>  Output format (default from .env)")
 	fmt.Fprintln(w, "  --list-orgs                 List organizations and exit")
 	fmt.Fprintln(w, "  --list-networks             List networks per organization and exit")
@@ -522,7 +556,7 @@ func printUsage(w *os.File) {
 	fmt.Fprintln(w, "  --test-full-table           Display all MACs in forwarding table (filters apply)")
 	fmt.Fprintln(w, "  --switch <name>             Filter by switch name (case-insensitive substring)")
 	fmt.Fprintln(w, "  --port <number>             Filter by port name/number")
-	fmt.Fprintln(w, "  --verbose                   Show search progress")
+	fmt.Fprintln(w, "  --verbose                   Send DEBUG logs to console (overrides --log-level and --log-file)")
 	fmt.Fprintln(w, "  --log-file <filename>        Log file path (default from .env)")
 	fmt.Fprintln(w, "  --log-level <DEBUG|INFO|WARNING|ERROR>  Log level (default from .env)")
 	fmt.Fprintln(w, "  --version                   Show version and exit")
@@ -538,6 +572,7 @@ func printUsage(w *os.File) {
 	fmt.Fprintln(w, "  LOG_LEVEL          DEBUG | INFO | WARNING | ERROR")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "Examples:")
+	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --ip 192.168.1.100 --network ALL")
 	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --mac 00:11:22:33:44:55 --network ALL")
 	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --mac 08:f1:b3:6f:9c:* --output-format text")
 	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --test-full-table --network City --switch ccc9300xa")
