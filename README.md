@@ -104,12 +104,54 @@ Find-Meraki-Ports-With-MAC.exe --version
 
 Output:
 ```
-Find-Meraki-Ports-With-MAC version 1.0.0
+Find-Meraki-Ports-With-MAC version 1.1.0
   Commit:     a1b2c3d
   Build Time: 2024-01-15T10:30:00Z
   Go Version: go1.21
   Repository: https://github.com/bci/Find-Meraki-Ports-With-MAC
 ```
+
+## Interactive Web Interface
+
+Launch a user-friendly web interface for device resolution with real-time features:
+
+```
+Find-Meraki-Ports-With-MAC.exe --interactive
+```
+
+The web interface provides:
+
+- **API Key Management**: Secure input and validation of Meraki API keys
+- **Organization & Network Selection**: Dropdown menus for easy navigation
+- **Device Resolution**: Search by MAC address or IP address with instant results
+- **Network Topology**: Interactive visualization of switch connections (D3.js)
+- **Real-time Logs**: Live logging with WebSocket streaming
+- **Manufacturer Lookup**: IEEE OUI database integration for device identification
+- **Alert Monitoring**: Real-time notifications for network events
+
+### Web Interface Features
+
+- **Responsive Design**: Works on desktop and mobile devices
+- **Persistent Sessions**: Remembers your selections between visits
+- **RESTful API**: Backend provides JSON APIs for integration
+- **WebSocket Support**: Real-time updates for logs and alerts
+- **Topology Visualization**: Interactive network maps with D3.js
+
+### Web Server Configuration
+
+```
+Find-Meraki-Ports-With-MAC.exe --interactive --web-port 8080 --web-host localhost
+```
+
+**Web Server Flags:**
+- --web-port: Port for web server (default: 8080)
+- --web-host: Host for web server (default: localhost)
+
+**Environment Variables:**
+- WEB_PORT: Default web server port
+- WEB_HOST: Default web server host
+
+The web interface is available at `http://localhost:8080` (or configured host/port).
 
 ### Sample Output
 
@@ -156,6 +198,8 @@ Create a `.env` file (see `.env.example`).
 - MERAKI_BASE_URL: optional (defaults to https://api.meraki.com/api/v1)
 - LOG_FILE: log file path (default Find-Meraki-Ports-With-MAC.log)
 - LOG_LEVEL: DEBUG | INFO | WARNING | ERROR
+- WEB_PORT: default web server port (default: 8080)
+- WEB_HOST: default web server host (default: localhost)
 
 ## Flags
 
@@ -186,6 +230,11 @@ Create a `.env` file (see `.env.example`).
 **Information:**
 - --version: show version, commit, build time, and repository URL
 - --help: show usage, flags, env vars, and examples
+
+**Interactive Web Interface:**
+- --interactive: launch web interface mode
+- --web-port: port for web server (default: 8080)
+- --web-host: host for web server (default: localhost)
 
 ## Output formats
 

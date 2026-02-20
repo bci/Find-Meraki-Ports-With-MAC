@@ -63,6 +63,11 @@ func New(logFile string, level LogLevel) *Logger {
 	return &Logger{level: level, writer: writer}
 }
 
+// NewWriter creates a logger that writes to the provided io.Writer directly.
+func NewWriter(w io.Writer, level LogLevel) *Logger {
+	return &Logger{level: level, writer: w}
+}
+
 func (l *Logger) logf(level LogLevel, label string, format string, args ...interface{}) {
 	if l == nil || !(level >= l.level) {
 		return

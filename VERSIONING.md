@@ -40,7 +40,7 @@ LDFLAGS := -ldflags "-s -w -X main.Version=$(VERSION) -X main.Commit=$(COMMIT) -
 ```yaml
 COMMIT=$(git rev-parse --short HEAD)
 BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-LDFLAGS="-s -w -X main.Version=1.0.0 -X main.Commit=$COMMIT -X main.BuildTime=$BUILD_TIME"
+LDFLAGS="-s -w -X main.Version=1.1.0 -X main.Commit=$COMMIT -X main.BuildTime=$BUILD_TIME"
 ```
 
 ## Usage
@@ -53,7 +53,7 @@ LDFLAGS="-s -w -X main.Version=1.0.0 -X main.Commit=$COMMIT -X main.BuildTime=$B
 
 Output:
 ```
-Find-Meraki-Ports-With-MAC version 1.0.0
+Find-Meraki-Ports-With-MAC version 1.1.0
   Commit:     a1b2c3d
   Build Time: 2024-01-15T10:30:00Z
   Go Version: go1.21
@@ -62,7 +62,7 @@ Find-Meraki-Ports-With-MAC version 1.0.0
 ### Manual Build with Custom Version
 
 ```bash
-VERSION="1.0.0"
+VERSION="1.1.0"
 COMMIT=$(git rev-parse --short HEAD)
 BUILDTIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
@@ -95,7 +95,7 @@ The following variables in [main.go](main.go#L38-L45) are populated at build tim
 
 ```go
 var (
-    Version   = "dev"         // Injected: -X main.Version=1.0.0
+    Version   = "dev"         // Injected: -X main.Version=1.1.0
     Commit    = "unknown"     // Injected: -X main.Commit=abc1234
     BuildTime = "unknown"     // Injected: -X main.BuildTime=2024-01-15T10:30:00Z
     GoVersion = "go1.21"      // Set to build Go version
@@ -125,8 +125,8 @@ When creating a release:
 
 1. Update version in build scripts (VERSION variable)
 2. Build all platforms: `make build-all`
-3. Tag release: `git tag -a v1.0.0 -m "Release v1.0.0"`
-4. Push changes and tags: `git push origin master v1.0.0`
+3. Tag release: `git tag -a v1.1.0 -m "Release v1.1.0"`
+4. Push changes and tags: `git push origin master v1.1.0`
 5. Create GitHub release with binaries from `bin/` directory
 
 Each binary will automatically contain the correct version metadata from build-time injection.

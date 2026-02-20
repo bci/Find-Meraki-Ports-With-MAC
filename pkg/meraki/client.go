@@ -332,6 +332,71 @@ func ResolveHostname(ip string) (string, error) {
 	return hostname, nil
 }
 
+// SwitchPort represents the configuration of a Meraki switch port.
+type SwitchPort struct {
+	Number    interface{} `json:"number"`    // may be int or string depending on switch model
+	Name      string      `json:"name"`
+	Type      string      `json:"type"`      // "access" or "trunk"
+	Vlan      int         `json:"vlan"`      // access VLAN (access ports)
+	VoiceVlan int         `json:"voiceVlan"` // voice VLAN (ignored here)
+}
+
+// GetSwitchPort retrieves the configuration for a single switch port.
+// portID is the port number/name as a string (e.g. "24", "1").
+func (m *MerakiClient) GetSwitchPort(ctx context.Context, serial, portID string) (*SwitchPort, error) {
+	path := fmt.Sprintf("/devices/%s/switch/ports/%s", serial, portID)
+	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
+	if err != nil {
+		return nil, err
+	}
+	var sp SwitchPort
+	if err := json.Unmarshal(body, &sp); err != nil {
+		return nil, err
+	}
+	return &sp, nil
+}
+
+// TopologyNode represents a device node in the network link-layer topology.
+type TopologyNode struct {
+	MAC          string `json:"mac"`
+	Type         string `json:"type"`
+	Name         string `json:"name"`
+	Serial       string `json:"serial"`
+	DerivedRole  string `json:"derivedRole"`
+}
+
+// TopologyEnd represents one end of a topology link.
+type TopologyEnd struct {
+	Device TopologyNode `json:"device"`
+	IpAddr string       `json:"ipAddr"`
+}
+
+// TopologyLink represents a connection between two devices.
+type TopologyLink struct {
+	LastUpdatedAt string        `json:"lastUpdatedAt"`
+	Ends          []TopologyEnd `json:"ends"`
+}
+
+// TopologyData holds nodes and links for a network's link-layer topology.
+type TopologyData struct {
+	Nodes []map[string]interface{} `json:"nodes"`
+	Links []TopologyLink           `json:"links"`
+}
+
+// GetNetworkTopology retrieves the link-layer topology for a network.
+func (m *MerakiClient) GetNetworkTopology(ctx context.Context, networkID string) (*TopologyData, error) {
+	path := fmt.Sprintf("/networks/%s/topology/linkLayer", networkID)
+	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
+	if err != nil {
+		return nil, err
+	}
+	var result TopologyData
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // ResolveIPToMAC resolves an IP address to MAC address by querying Meraki clients API.
 // Searches across multiple networks and returns the MAC, network ID, and hostname.
 func (c *MerakiClient) ResolveIPToMAC(ctx context.Context, orgID string, networks []Network, ip string) (mac string, networkID string, hostname string, err error) {

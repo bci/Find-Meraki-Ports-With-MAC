@@ -20,6 +20,8 @@ type ResultRow struct {
 	LastSeen     string
 	IP           string
 	Hostname     string
+	VLAN         int
+	PortMode     string // "access", "trunk", or ""
 }
 
 // WriteCSV writes results in CSV format with headers.

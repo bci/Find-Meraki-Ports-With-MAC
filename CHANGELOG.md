@@ -5,7 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.0] - 2026-02-19
+## [1.1.0] - 2026-02-19
+
+### Added
+- **IP Address Resolution**: New `--ip` flag to resolve IP addresses to MAC addresses via Meraki API
+- **Hostname Resolution**: Automatic reverse DNS lookup with 5-second timeout for resolved IPs
+- **Enhanced Output**: IP and Hostname columns added to all output formats (CSV, text, HTML)
+- **Logger Bug Fix**: Fixed critical bug preventing DEBUG messages with `--verbose` flag
+- **Mutual Exclusivity**: `--ip` and `--mac` flags are mutually exclusive for clear operation
+- **Comprehensive Testing**: Added unit tests for IP resolution and hostname lookup functionality
+
+### Technical Improvements
+- **API Integration**: Extended Meraki client with `ResolveIPToMAC()` and `ResolveHostname()` methods
+- **Error Handling**: Robust timeout handling for DNS resolution
+- **Logging Enhancement**: Fixed log level comparison logic for proper DEBUG/INFO filtering
+- **Output Writers**: Updated all formatters to include IP and hostname data
+- **Test Coverage**: Added `TestResolveHostname()` function for DNS resolution testing
+
+### Examples
+```bash
+# Resolve IP to MAC and find switch port
+Find-Meraki-Ports-With-MAC --ip 172.17.4.1 --verbose
+
+# Output includes IP and hostname columns
+Org,Network,Switch,Serial,Port,MAC,IP,Hostname,LastSeen
+MyOrg,Network1,Switch1,XXXX-XXXX-XXXX,24,40:a6:b7:a5:3b:e0,172.17.4.1,itconsole.ci.gardena.ca.us,
+```
+
+## [1.0.0] - 2026-02-13
 
 ### Added
 - **Initial Release**: Complete CLI tool for finding Meraki switch ports by MAC address
@@ -73,5 +100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This version represents the initial stable release of the Find-Meraki-Ports-With-MAC tool. Future versions will include additional features such as IP address resolution, enhanced filtering options, and performance improvements.
 
-For more information, see the [README](README.md) and [repository](https://github.com/bci/Find-Meraki-Ports-With-MAC).</content>
+For more information, see the [README](README.md) and [repository](https://github.com/bci/Find-Meraki-Ports-With-MAC).
+
+[1.1.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.1.0
+[1.0.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.0.0</content>
 <parameter name="filePath">c:\Users\kent.behrends\Documents\GitHub\Find-Meraki-Ports-With-MAC\Find-Meraki-Ports-With-MAC\CHANGELOG.md
