@@ -1,4 +1,4 @@
-// Package main provides a command-line tool for finding MAC addresses on Meraki switches.
+﻿// Package main provides a command-line tool for finding MAC addresses on Meraki switches.
 // It supports both native Meraki MS switches and Cisco Catalyst switches managed by Meraki.
 package main
 
@@ -1538,6 +1538,35 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 
 	log.Debugf("Network clients API returned %d clients", len(networkClients))
 
+	// Build MAC->IP map from network clients for IP enrichment fallback.
+	macToIPWeb := make(map[string]string, len(networkClients))
+	for _, nc := range networkClients {
+		if nc.IP == "" {
+			continue
+		}
+		if norm, err2 := macaddr.NormalizeExactMac(nc.MAC); err2 == nil {
+			macToIPWeb[norm] = nc.IP
+		}
+	}
+	serialArpCacheWeb := make(map[string]map[string]string)
+	resolveIP := func(normMAC, knownIP, serial string) (string, string) {
+		ip := knownIP
+		if ip == "" {
+			ip = macToIPWeb[normMAC]
+		}
+		if ip == "" && serial != "" {
+			if _, cached := serialArpCacheWeb[serial]; !cached {
+				serialArpCacheWeb[serial] = client.FetchArpMap(ctx, serial, macTablePoll)
+			}
+			ip = serialArpCacheWeb[serial][normMAC]
+		}
+		hn := hostname
+		if hn == "" && ip != "" {
+			hn, _ = meraki.ResolveHostname(ip)
+		}
+		return ip, hn
+	}
+
 	// Build device lookup map
 	deviceBySerial := make(map[string]meraki.Device)
 	for _, dev := range switches {
@@ -1561,6 +1590,7 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 
 			port := firstNonEmpty(c.SwitchportName, c.Switchport, c.Port, "unknown")
 			vlan, portMode := enrichPortInfo(ctx, client, serial, port, 0, "")
+			ip, hn := resolveIP(normMAC, c.IP, serial)
 
 			addResult(resultsIndex, &results, output.ResultRow{
 				OrgName:      org.Name,
@@ -1569,8 +1599,8 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 				SwitchSerial: serial,
 				Port:         port,
 				MAC:          macaddr.FormatMacColon(normMAC),
-				IP:           c.IP,
-				Hostname:     hostname,
+				IP:           ip,
+				Hostname:     hn,
 				LastSeen:     c.LastSeen,
 				VLAN:         vlan,
 				PortMode:     portMode,
@@ -1628,6 +1658,7 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 					vlan, _ := entry["vlan"].(float64)
 					portMode, _ := entry["type"].(string)
 					richVLAN, richMode := enrichPortInfo(ctx, client, dev.Serial, portID, int(vlan), portMode)
+					ip, hn := resolveIP(normMAC, "", dev.Serial)
 					addResult(resultsIndex, &results, output.ResultRow{
 						OrgName:      org.Name,
 						NetworkName:  network.Name,
@@ -1635,8 +1666,8 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 						SwitchSerial: dev.Serial,
 						Port:         firstNonEmpty(portID, "unknown"),
 						MAC:          macaddr.FormatMacColon(normMAC),
-						IP:           "",
-						Hostname:     hostname,
+						IP:           ip,
+						Hostname:     hn,
 						LastSeen:     "",
 						VLAN:         richVLAN,
 						PortMode:     richMode,
@@ -1667,6 +1698,7 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 			}
 			port := firstNonEmpty(c.SwitchportName, c.Switchport, c.Port, "unknown")
 			vlan, portMode := enrichPortInfo(ctx, client, dev.Serial, port, 0, "")
+			ip, hn := resolveIP(normMAC, "", dev.Serial)
 			addResult(resultsIndex, &results, output.ResultRow{
 				OrgName:      org.Name,
 				NetworkName:  network.Name,
@@ -1674,8 +1706,8 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 				SwitchSerial: dev.Serial,
 				Port:         port,
 				MAC:          macaddr.FormatMacColon(normMAC),
-				IP:           "",
-				Hostname:     hostname,
+				IP:           ip,
+				Hostname:     hn,
 				LastSeen:     c.LastSeen,
 				VLAN:         vlan,
 				PortMode:     portMode,
