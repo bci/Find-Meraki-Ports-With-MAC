@@ -38,6 +38,7 @@ type Config struct {
 	OutputFormat string // Output format: csv, text, or html
 	BaseURL      string // Meraki API base URL
 	MaxRetries   int    // Maximum number of API request retries on 429
+	MacTablePoll int    // MAC table lookup poll attempts (2s each)
 	LogFile      string // Path to log file
 	LogLevel     string // Log level: DEBUG, INFO, WARNING, ERROR
 	Verbose      bool   // Enable verbose output
@@ -135,6 +136,7 @@ func main() {
 	helpFlag := flag.Bool("help", false, "Show help")
 	interactiveFlag := flag.Bool("interactive", false, "Launch web interface mode")
 	retryFlag := flag.Int("retry", 0, "Maximum API retry attempts on rate limit (default: 6)")
+	macPollFlag := flag.Int("mac-table-poll", 0, "MAC table lookup poll attempts, 2s each (default: 15)")
 	webPortFlag := flag.String("web-port", "", "Port for web server (default: 8080)")
 	webHostFlag := flag.String("web-host", "", "Host for web server (default: localhost)")
 	flag.Usage = func() {
@@ -149,6 +151,7 @@ func main() {
 		OutputFormat: strings.TrimSpace(firstNonEmpty(*outputFlag, os.Getenv("OUTPUT_FORMAT"))),
 		BaseURL:      strings.TrimSpace(firstNonEmpty(os.Getenv("MERAKI_BASE_URL"), "https://api.meraki.com/api/v1")),
 		MaxRetries:   firstNonZeroInt(*retryFlag, parseIntEnv("MERAKI_RETRIES"), 6),
+		MacTablePoll: firstNonZeroInt(*macPollFlag, parseIntEnv("MERAKI_MAC_POLL"), 15),
 		LogFile:      strings.TrimSpace(firstNonEmpty(*logFileFlag, os.Getenv("LOG_FILE"), "Find-Meraki-Ports-With-MAC.log")),
 		LogLevel:     strings.TrimSpace(firstNonEmpty(*logLevelFlag, os.Getenv("LOG_LEVEL"), "DEBUG")),
 		Verbose:      *verboseFlag,
@@ -361,6 +364,41 @@ func main() {
 		}
 		log.Debugf("Network clients API returned %d clients", len(networkClients))
 
+		// Build MAC→IP map for enriching results from live table / device clients.
+		macToIP := make(map[string]string, len(networkClients))
+		for _, nc := range networkClients {
+			if nc.IP == "" {
+				continue
+			}
+			if norm, err2 := macaddr.NormalizeExactMac(nc.MAC); err2 == nil {
+				macToIP[norm] = nc.IP
+			}
+		}
+
+		// ipAndHostname returns the IP (and reverse-DNS hostname in MAC mode) for a
+		// normalized MAC. If not found in macToIP, performs a live ARP table lookup
+		// on the switch (serial) where the MAC was found, caching results per switch.
+		// In IP mode the hostname is already in resolvedHostname.
+		serialArpCache := make(map[string]map[string]string)
+		ipAndHostname := func(normMAC, knownIP, serial string) (string, string) {
+			ip := knownIP
+			if ip == "" {
+				ip = macToIP[normMAC]
+			}
+			// Fallback: live ARP table lookup on the specific switch
+			if ip == "" && serial != "" {
+				if _, cached := serialArpCache[serial]; !cached {
+					serialArpCache[serial] = client.FetchArpMap(ctx, serial, cfg.MacTablePoll)
+				}
+				ip = serialArpCache[serial][normMAC]
+			}
+			hn := resolvedHostname // pre-set in IP mode
+			if hn == "" && ip != "" {
+				hn, _ = meraki.ResolveHostname(ip)
+			}
+			return ip, hn
+		}
+
 		for _, c := range networkClients {
 			normMAC, err := macaddr.NormalizeExactMac(c.MAC)
 			if err != nil {
@@ -394,6 +432,7 @@ func main() {
 
 				vlan, portMode := enrichPortInfo(ctx, client, serial, port, 0, "")
 
+				ip, hn := ipAndHostname(normMAC, c.IP, serial)
 				addResult(resultsIndex, &results, output.ResultRow{
 					OrgName:      org.Name,
 					NetworkName:  net.Name,
@@ -401,8 +440,8 @@ func main() {
 					SwitchSerial: serial,
 					Port:         port,
 					MAC:          macaddr.FormatMacColon(normMAC),
-					IP:           c.IP,
-					Hostname:     resolvedHostname, // Only populated for IP resolution mode
+					IP:           ip,
+					Hostname:     hn,
 					LastSeen:     c.LastSeen,
 					VLAN:         vlan,
 					PortMode:     portMode,
@@ -424,7 +463,7 @@ func main() {
 				// Poll for results (max 30 seconds)
 				var macEntries []map[string]interface{}
 				var status string
-				for attempt := 0; attempt < 15; attempt++ {
+				for attempt := 0; attempt < cfg.MacTablePoll; attempt++ {
 					time.Sleep(2 * time.Second)
 					macEntries, status, err = client.GetMacTableLookup(ctx, dev.Serial, macTableID)
 					if err != nil {
@@ -438,8 +477,8 @@ func main() {
 						break
 					}
 					if cfg.Verbose {
-						log.Debugf("MAC table lookup status for %s (%s) in network %s: %s (attempt %d/15)",
-							firstNonEmpty(dev.Name, dev.Serial), dev.Serial, net.Name, status, attempt+1)
+						log.Debugf("MAC table lookup status for %s (%s) in network %s: %s (attempt %d/%d)",
+							firstNonEmpty(dev.Name, dev.Serial), dev.Serial, net.Name, status, attempt+1, cfg.MacTablePoll)
 					}
 				}
 
@@ -487,6 +526,7 @@ func main() {
 									macaddr.FormatMacColon(normMAC), firstNonEmpty(dev.Name, dev.Serial), port, richVLAN, richMode)
 							}
 
+							ip, hn := ipAndHostname(normMAC, "", dev.Serial)
 							addResult(resultsIndex, &results, output.ResultRow{
 								OrgName:      org.Name,
 								NetworkName:  net.Name,
@@ -494,8 +534,8 @@ func main() {
 								SwitchSerial: dev.Serial,
 								Port:         port,
 								MAC:          macaddr.FormatMacColon(normMAC),
-								IP:           "", // Live MAC table doesn't provide IP info
-								Hostname:     resolvedHostname, // Only populated for IP resolution mode
+								IP:           ip,
+								Hostname:     hn,
 								LastSeen:     "",
 								VLAN:         richVLAN,
 								PortMode:     richMode,
@@ -534,6 +574,7 @@ func main() {
 						continue
 					}
 					vlan, portMode := enrichPortInfo(ctx, client, dev.Serial, port, 0, "")
+					ip, hn := ipAndHostname(normMAC, "", dev.Serial)
 					addResult(resultsIndex, &results, output.ResultRow{
 						OrgName:      org.Name,
 						NetworkName:  net.Name,
@@ -541,8 +582,8 @@ func main() {
 						SwitchSerial: dev.Serial,
 						Port:         port,
 						MAC:          macaddr.FormatMacColon(normMAC),
-						IP:           "", // Device clients API doesn't provide IP info
-						Hostname:     resolvedHostname, // Only populated for IP resolution mode
+						IP:           ip,
+						Hostname:     hn,
 						LastSeen:     c.LastSeen,
 						VLAN:         vlan,
 						PortMode:     portMode,
@@ -1477,7 +1518,7 @@ func resolveDevices(cfg Config, macAddr, ipAddr string) ([]output.ResultRow, err
 	}
 
 	switches := filters.FilterSwitches(devices)
-	results, err := processSwitchesForResolution(ctx, client, targetOrg, targetNetwork, switches, matcher, resolvedHostname, log)
+	results, err := processSwitchesForResolution(ctx, client, targetOrg, targetNetwork, switches, matcher, resolvedHostname, cfg.MacTablePoll, log)
 	if err != nil {
 		return nil, err
 	}
@@ -1485,7 +1526,7 @@ func resolveDevices(cfg Config, macAddr, ipAddr string) ([]output.ResultRow, err
 	return results, nil
 }
 
-func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClient, org *meraki.Organization, network *meraki.Network, switches []meraki.Device, matcher func(string) bool, hostname string, log *logger.Logger) ([]output.ResultRow, error) {
+func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClient, org *meraki.Organization, network *meraki.Network, switches []meraki.Device, matcher func(string) bool, hostname string, macTablePoll int, log *logger.Logger) ([]output.ResultRow, error) {
 	var results []output.ResultRow
 	resultsIndex := make(map[string]struct{})
 
@@ -1551,7 +1592,7 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 		{
 			var macEntries []map[string]interface{}
 			var status string
-			for attempt := 0; attempt < 15; attempt++ {
+			for attempt := 0; attempt < macTablePoll; attempt++ {
 				time.Sleep(2 * time.Second)
 				macEntries, status, err = client.GetMacTableLookup(ctx, dev.Serial, macTableID)
 				if err != nil {
@@ -1560,7 +1601,7 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 				if status == "complete" {
 					break
 				}
-				log.Debugf("MAC table status for %s: %s (attempt %d/15)", firstNonEmpty(dev.Name, dev.Serial), status, attempt+1)
+				log.Debugf("MAC table status for %s: %s (attempt %d/%d)", firstNonEmpty(dev.Name, dev.Serial), status, attempt+1, macTablePoll)
 			}
 
 			if status == "complete" && len(macEntries) > 0 {
@@ -1804,6 +1845,7 @@ func printUsage(w *os.File) {
 	fmt.Fprintln(w, "  --log-file <filename>        Log file path (default from .env)")
 	fmt.Fprintln(w, "  --log-level <DEBUG|INFO|WARNING|ERROR>  Log level (default from .env)")
 	fmt.Fprintln(w, "  --retry <n>                 Max API retry attempts on rate limit (default: 6)")
+	fmt.Fprintln(w, "  --mac-table-poll <n>        MAC table lookup poll attempts, 2s each (default: 15)")
 	fmt.Fprintln(w, "  --version                   Show version and exit")
 	fmt.Fprintln(w, "  --help                      Show this help")
 	fmt.Fprintln(w, "")
@@ -1814,6 +1856,7 @@ func printUsage(w *os.File) {
 	fmt.Fprintln(w, "  OUTPUT_FORMAT      csv | text | html")
 	fmt.Fprintln(w, "  MERAKI_BASE_URL    API base URL (default https://api.meraki.com/api/v1)")
 	fmt.Fprintln(w, "  MERAKI_RETRIES     Max API retry attempts on rate limit (default 6)")
+	fmt.Fprintln(w, "  MERAKI_MAC_POLL    MAC table lookup poll attempts, 2s each (default 15)")
 	fmt.Fprintln(w, "  LOG_FILE           Log file path (default Find-Meraki-Ports-With-MAC.log)")
 	fmt.Fprintln(w, "  LOG_LEVEL          DEBUG | INFO | WARNING | ERROR")
 	fmt.Fprintln(w, "")

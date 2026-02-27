@@ -236,6 +236,91 @@ func (m *MerakiClient) GetMacTableLookup(ctx context.Context, serial, macTableID
 	return macEntries, status, nil
 }
 
+// CreateArpTableLookup initiates a live ARP table lookup on a device.
+// Returns the arpTableId which can be used to poll for results.
+func (m *MerakiClient) CreateArpTableLookup(ctx context.Context, serial string) (string, error) {
+	path := fmt.Sprintf("/devices/%s/liveTools/arpTable", serial)
+	body, _, err := m.doRequest(ctx, "POST", m.buildURL(path, nil))
+	if err != nil {
+		return "", err
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", err
+	}
+	id, ok := result["arpTableId"].(string)
+	if !ok {
+		return "", fmt.Errorf("no arpTableId in response")
+	}
+	return id, nil
+}
+
+// GetArpTableLookup polls for the results of a live ARP table lookup.
+// Returns entries (map of "ip"→"mac"), status, and any error.
+func (m *MerakiClient) GetArpTableLookup(ctx context.Context, serial, arpTableID string) ([]map[string]interface{}, string, error) {
+	path := fmt.Sprintf("/devices/%s/liveTools/arpTable/%s", serial, arpTableID)
+	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
+	if err != nil {
+		return nil, "", err
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, "", err
+	}
+	status, _ := result["status"].(string)
+	if status != "complete" {
+		return nil, status, nil
+	}
+	entries, ok := result["entries"].([]interface{})
+	if !ok {
+		return nil, status, nil
+	}
+	var out []map[string]interface{}
+	for _, e := range entries {
+		if entry, ok := e.(map[string]interface{}); ok {
+			out = append(out, entry)
+		}
+	}
+	return out, status, nil
+}
+
+// FetchArpMap creates and polls a live ARP table for a device, returning a
+// normalized-MAC → IP map. maxPoll is the number of 2-second poll attempts.
+// Returns an empty map (not an error) when the device doesn't support ARP table.
+func (m *MerakiClient) FetchArpMap(ctx context.Context, serial string, maxPoll int) map[string]string {
+	result := make(map[string]string)
+	arpID, err := m.CreateArpTableLookup(ctx, serial)
+	if err != nil {
+		return result
+	}
+	for i := 0; i < maxPoll; i++ {
+		time.Sleep(2 * time.Second)
+		entries, status, err := m.GetArpTableLookup(ctx, serial, arpID)
+		if err != nil || status == "failed" {
+			return result
+		}
+		if status == "complete" {
+			for _, e := range entries {
+				ip, _ := e["ip"].(string)
+				mac, _ := e["mac"].(string)
+				if ip == "" || mac == "" {
+					continue
+				}
+				// normalize MAC (strip separators, lowercase)
+				clean := strings.Map(func(r rune) rune {
+					if r == ':' || r == '.' || r == '-' {
+						return -1
+					}
+					return r
+				}, strings.ToLower(mac))
+				result[clean] = ip
+			}
+			return result
+		}
+	}
+	return result
+}
+
 // getAllPages handles pagination for API endpoints that return arrays.
 // It follows the Link header with rel="next" until all pages are retrieved.
 func (m *MerakiClient) getAllPages(ctx context.Context, path string, params url.Values) ([]json.RawMessage, error) {
