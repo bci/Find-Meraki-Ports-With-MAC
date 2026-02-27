@@ -60,20 +60,26 @@ type NetworkClient struct {
 
 // MerakiClient is an HTTP client wrapper for the Meraki Dashboard API.
 type MerakiClient struct {
-	apiKey  string
-	baseURL string
-	client  *http.Client
+	apiKey     string
+	baseURL    string
+	maxRetries int
+	client     *http.Client
 }
 
 // NewClient creates a new Meraki API client.
-func NewClient(apiKey, baseURL string) *MerakiClient {
+// maxRetries controls how many times a 429 response is retried; 0 uses the default of 6.
+func NewClient(apiKey, baseURL string, maxRetries int) *MerakiClient {
 	if baseURL == "" {
 		baseURL = "https://api.meraki.com/api/v1"
 	}
 	baseURL = strings.TrimRight(baseURL, "/")
+	if maxRetries <= 0 {
+		maxRetries = 6
+	}
 	return &MerakiClient{
-		apiKey:  apiKey,
-		baseURL: baseURL,
+		apiKey:     apiKey,
+		baseURL:    baseURL,
+		maxRetries: maxRetries,
 		client: &http.Client{
 			Timeout: 60 * time.Second,
 		},
@@ -269,7 +275,7 @@ func (m *MerakiClient) buildURL(path string, params url.Values) string {
 // It automatically retries on 429 (Too Many Requests) with exponential backoff.
 // Returns the response body, next page URL (from Link header), and any error.
 func (m *MerakiClient) doRequest(ctx context.Context, method, fullURL string) ([]byte, string, error) {
-	for attempt := 0; attempt < 6; attempt++ {
+	for attempt := 0; attempt < m.maxRetries; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, method, fullURL, nil)
 		if err != nil {
 			return nil, "", err

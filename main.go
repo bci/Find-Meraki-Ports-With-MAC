@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,7 @@ type Config struct {
 	NetworkName  string // Network name filter or "ALL"
 	OutputFormat string // Output format: csv, text, or html
 	BaseURL      string // Meraki API base URL
+	MaxRetries   int    // Maximum number of API request retries on 429
 	LogFile      string // Path to log file
 	LogLevel     string // Log level: DEBUG, INFO, WARNING, ERROR
 	Verbose      bool   // Enable verbose output
@@ -132,6 +134,7 @@ func main() {
 	versionFlag := flag.Bool("version", false, "Show version and exit")
 	helpFlag := flag.Bool("help", false, "Show help")
 	interactiveFlag := flag.Bool("interactive", false, "Launch web interface mode")
+	retryFlag := flag.Int("retry", 0, "Maximum API retry attempts on rate limit (default: 6)")
 	webPortFlag := flag.String("web-port", "", "Port for web server (default: 8080)")
 	webHostFlag := flag.String("web-host", "", "Host for web server (default: localhost)")
 	flag.Usage = func() {
@@ -145,6 +148,7 @@ func main() {
 		NetworkName:  strings.TrimSpace(firstNonEmpty(*networkFlag, os.Getenv("MERAKI_NETWORK"))),
 		OutputFormat: strings.TrimSpace(firstNonEmpty(*outputFlag, os.Getenv("OUTPUT_FORMAT"))),
 		BaseURL:      strings.TrimSpace(firstNonEmpty(os.Getenv("MERAKI_BASE_URL"), "https://api.meraki.com/api/v1")),
+		MaxRetries:   firstNonZeroInt(*retryFlag, parseIntEnv("MERAKI_RETRIES"), 6),
 		LogFile:      strings.TrimSpace(firstNonEmpty(*logFileFlag, os.Getenv("LOG_FILE"), "Find-Meraki-Ports-With-MAC.log")),
 		LogLevel:     strings.TrimSpace(firstNonEmpty(*logLevelFlag, os.Getenv("LOG_LEVEL"), "DEBUG")),
 		Verbose:      *verboseFlag,
@@ -196,7 +200,7 @@ func main() {
 		exitWithError(log, "--output-format must be one of: csv, text, html")
 	}
 
-	client := meraki.NewClient(cfg.APIKey, cfg.BaseURL)
+	client := meraki.NewClient(cfg.APIKey, cfg.BaseURL, cfg.MaxRetries)
 	ctx := context.Background()
 
 	if *testAPIFlag {
@@ -802,7 +806,7 @@ func handleValidateKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create Meraki client with the provided API key
-	client := meraki.NewClient(req.APIKey, "")
+	client := meraki.NewClient(req.APIKey, "", 0)
 	ctx := context.Background()
 
 	// Test the API key by fetching organizations
@@ -836,7 +840,7 @@ func handleGetNetworks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := meraki.NewClient(apiKey, "")
+	client := meraki.NewClient(apiKey, "", 0)
 	ctx := context.Background()
 
 	networks, err := client.GetNetworks(ctx, orgID)
@@ -1224,7 +1228,7 @@ func handleGetTopology(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := meraki.NewClient(apiKey, "")
+	client := meraki.NewClient(apiKey, "", 0)
 
 	type outNode struct {
 		ID    string `json:"id"`
@@ -1373,7 +1377,7 @@ func enrichPortInfo(ctx context.Context, client *meraki.MerakiClient, serial, po
 func resolveDevices(cfg Config, macAddr, ipAddr string) ([]output.ResultRow, error) {
 	log := newWebLogger()
 
-	client := meraki.NewClient(cfg.APIKey, cfg.BaseURL)
+	client := meraki.NewClient(cfg.APIKey, cfg.BaseURL, cfg.MaxRetries)
 	ctx := context.Background()
 
 	var targetOrg *meraki.Organization
@@ -1699,6 +1703,26 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// firstNonZeroInt returns the first non-zero int from the provided values.
+func firstNonZeroInt(values ...int) int {
+	for _, v := range values {
+		if v != 0 {
+			return v
+		}
+	}
+	return 0
+}
+
+// parseIntEnv reads an environment variable and returns its integer value, or 0 if unset/invalid.
+func parseIntEnv(key string) int {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return 0
+}
+
 // exitWithError logs an error message and exits the program with status code 1.
 // If log is nil, the error is written to stderr instead.
 func exitWithError(log *logger.Logger, msg string) {
@@ -1779,6 +1803,7 @@ func printUsage(w *os.File) {
 	fmt.Fprintln(w, "  --verbose                   Send DEBUG logs to console (overrides --log-level and --log-file)")
 	fmt.Fprintln(w, "  --log-file <filename>        Log file path (default from .env)")
 	fmt.Fprintln(w, "  --log-level <DEBUG|INFO|WARNING|ERROR>  Log level (default from .env)")
+	fmt.Fprintln(w, "  --retry <n>                 Max API retry attempts on rate limit (default: 6)")
 	fmt.Fprintln(w, "  --version                   Show version and exit")
 	fmt.Fprintln(w, "  --help                      Show this help")
 	fmt.Fprintln(w, "")
@@ -1788,6 +1813,7 @@ func printUsage(w *os.File) {
 	fmt.Fprintln(w, "  MERAKI_NETWORK     Default network name or ALL")
 	fmt.Fprintln(w, "  OUTPUT_FORMAT      csv | text | html")
 	fmt.Fprintln(w, "  MERAKI_BASE_URL    API base URL (default https://api.meraki.com/api/v1)")
+	fmt.Fprintln(w, "  MERAKI_RETRIES     Max API retry attempts on rate limit (default 6)")
 	fmt.Fprintln(w, "  LOG_FILE           Log file path (default Find-Meraki-Ports-With-MAC.log)")
 	fmt.Fprintln(w, "  LOG_LEVEL          DEBUG | INFO | WARNING | ERROR")
 	fmt.Fprintln(w, "")
