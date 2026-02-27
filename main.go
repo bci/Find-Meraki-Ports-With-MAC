@@ -265,8 +265,13 @@ func main() {
 		exitWithError(log, err.Error())
 	}
 
-	// Handle single organization auto-selection
-	if len(orgs) == 1 && cfg.OrgName == "" {
+	// Handle single organization auto-selection.
+	// When the API key is scoped to exactly one org, use it unconditionally.
+	// If an org name was specified but doesn't match, log a warning and continue.
+	if len(orgs) == 1 {
+		if cfg.OrgName != "" && cfg.OrgName != orgs[0].Name {
+			log.Debugf("Org name %q not matched; auto-selecting only available organization: %s", cfg.OrgName, orgs[0].Name)
+		}
 		cfg.OrgName = orgs[0].Name
 		log.Debugf("Auto-selected single organization: %s", cfg.OrgName)
 	}
@@ -1716,7 +1721,7 @@ func selectOrganization(name string, orgs []meraki.Organization) (meraki.Organiz
 		return meraki.Organization{}, errors.New("multiple organizations found, please specify --org")
 	}
 	for _, org := range orgs {
-		if org.Name == name {
+		if strings.EqualFold(org.Name, name) {
 			return org, nil
 		}
 	}
@@ -1731,7 +1736,7 @@ func selectNetworks(name string, networks []meraki.Network) ([]meraki.Network, e
 		return networks, nil
 	}
 	for _, net := range networks {
-		if net.Name == name {
+		if strings.EqualFold(net.Name, name) {
 			return []meraki.Network{net}, nil
 		}
 	}
