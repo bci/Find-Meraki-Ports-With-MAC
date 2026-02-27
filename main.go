@@ -364,14 +364,25 @@ func main() {
 		}
 		log.Debugf("Network clients API returned %d clients", len(networkClients))
 
-		// Build MAC→IP map for enriching results from live table / device clients.
+		// Build MAC→IP/hostname/lastSeen maps for enriching results from live table / device clients.
 		macToIP := make(map[string]string, len(networkClients))
+		macToLastSeen := make(map[string]string, len(networkClients))
+		macToHostname := make(map[string]string, len(networkClients))
 		for _, nc := range networkClients {
-			if nc.IP == "" {
+			norm, err2 := macaddr.NormalizeExactMac(nc.MAC)
+			if err2 != nil {
 				continue
 			}
-			if norm, err2 := macaddr.NormalizeExactMac(nc.MAC); err2 == nil {
+			if nc.IP != "" {
 				macToIP[norm] = nc.IP
+			}
+			if nc.LastSeen != "" {
+				if existing := macToLastSeen[norm]; existing == "" || nc.LastSeen > existing {
+					macToLastSeen[norm] = nc.LastSeen
+				}
+			}
+			if hn := meraki.ClientHostname(nc); hn != "" {
+				macToHostname[norm] = hn
 			}
 		}
 
@@ -393,6 +404,9 @@ func main() {
 				ip = serialArpCache[serial][normMAC]
 			}
 			hn := resolvedHostname // pre-set in IP mode
+			if hn == "" {
+				hn = macToHostname[normMAC]
+			}
 			if hn == "" && ip != "" {
 				hn, _ = meraki.ResolveHostname(ip)
 			}
@@ -442,7 +456,7 @@ func main() {
 					MAC:          macaddr.FormatMacColon(normMAC),
 					IP:           ip,
 					Hostname:     hn,
-					LastSeen:     c.LastSeen,
+					LastSeen:     firstNonEmpty(c.LastSeen, macToLastSeen[normMAC]),
 					VLAN:         vlan,
 					PortMode:     portMode,
 				})
@@ -536,7 +550,7 @@ func main() {
 								MAC:          macaddr.FormatMacColon(normMAC),
 								IP:           ip,
 								Hostname:     hn,
-								LastSeen:     "",
+								LastSeen:     macToLastSeen[normMAC],
 								VLAN:         richVLAN,
 								PortMode:     richMode,
 							})
@@ -1538,14 +1552,25 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 
 	log.Debugf("Network clients API returned %d clients", len(networkClients))
 
-	// Build MAC->IP map from network clients for IP enrichment fallback.
+	// Build MAC->IP/hostname/lastSeen maps from network clients for enrichment fallback.
 	macToIPWeb := make(map[string]string, len(networkClients))
+	macToLastSeenWeb := make(map[string]string, len(networkClients))
+	macToHostnameWeb := make(map[string]string, len(networkClients))
 	for _, nc := range networkClients {
-		if nc.IP == "" {
+		norm, err2 := macaddr.NormalizeExactMac(nc.MAC)
+		if err2 != nil {
 			continue
 		}
-		if norm, err2 := macaddr.NormalizeExactMac(nc.MAC); err2 == nil {
+		if nc.IP != "" {
 			macToIPWeb[norm] = nc.IP
+		}
+		if nc.LastSeen != "" {
+			if existing := macToLastSeenWeb[norm]; existing == "" || nc.LastSeen > existing {
+				macToLastSeenWeb[norm] = nc.LastSeen
+			}
+		}
+		if hn := meraki.ClientHostname(nc); hn != "" {
+			macToHostnameWeb[norm] = hn
 		}
 	}
 	serialArpCacheWeb := make(map[string]map[string]string)
@@ -1561,6 +1586,9 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 			ip = serialArpCacheWeb[serial][normMAC]
 		}
 		hn := hostname
+		if hn == "" {
+			hn = macToHostnameWeb[normMAC]
+		}
 		if hn == "" && ip != "" {
 			hn, _ = meraki.ResolveHostname(ip)
 		}
@@ -1601,7 +1629,7 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 				MAC:          macaddr.FormatMacColon(normMAC),
 				IP:           ip,
 				Hostname:     hn,
-				LastSeen:     c.LastSeen,
+				LastSeen:     firstNonEmpty(c.LastSeen, macToLastSeenWeb[normMAC]),
 				VLAN:         vlan,
 				PortMode:     portMode,
 			})
@@ -1668,7 +1696,7 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 						MAC:          macaddr.FormatMacColon(normMAC),
 						IP:           ip,
 						Hostname:     hn,
-						LastSeen:     "",
+						LastSeen:     macToLastSeenWeb[normMAC],
 						VLAN:         richVLAN,
 						PortMode:     richMode,
 					})

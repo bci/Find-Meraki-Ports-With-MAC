@@ -56,6 +56,9 @@ type NetworkClient struct {
 	RecentDeviceSerial string `json:"recentDeviceSerial"`
 	RecentDeviceName   string `json:"recentDeviceName"`
 	IP                 string `json:"ip"`
+	Description        string `json:"description"`
+	DhcpHostname       string `json:"dhcpHostname"`
+	Notes              string `json:"notes"`
 }
 
 // MerakiClient is an HTTP client wrapper for the Meraki Dashboard API.
@@ -423,9 +426,42 @@ func ResolveHostname(ip string) (string, error) {
 	return hostname, nil
 }
 
+// isUUIDLike returns true if s matches the xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx pattern.
+// Used to filter out auto-generated UUIDs that Meraki sometimes stores in client Description.
+func isUUIDLike(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if c != '-' {
+				return false
+			}
+		} else if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+// ClientHostname returns the best available hostname for a NetworkClient.
+// Priority: Notes > Description (if not UUID-like) > DhcpHostname
+func ClientHostname(nc NetworkClient) string {
+	if nc.Notes != "" {
+		return nc.Notes
+	}
+	if nc.Description != "" && !isUUIDLike(nc.Description) {
+		return nc.Description
+	}
+	if nc.DhcpHostname != "" {
+		return nc.DhcpHostname
+	}
+	return ""
+}
+
 // SwitchPort represents the configuration of a Meraki switch port.
 type SwitchPort struct {
-	Number    interface{} `json:"number"`    // may be int or string depending on switch model
+	Number    interface{} `json:"number"` // may be int or string depending on switch model
 	Name      string      `json:"name"`
 	Type      string      `json:"type"`      // "access" or "trunk"
 	Vlan      int         `json:"vlan"`      // access VLAN (access ports)
@@ -449,11 +485,11 @@ func (m *MerakiClient) GetSwitchPort(ctx context.Context, serial, portID string)
 
 // TopologyNode represents a device node in the network link-layer topology.
 type TopologyNode struct {
-	MAC          string `json:"mac"`
-	Type         string `json:"type"`
-	Name         string `json:"name"`
-	Serial       string `json:"serial"`
-	DerivedRole  string `json:"derivedRole"`
+	MAC         string `json:"mac"`
+	Type        string `json:"type"`
+	Name        string `json:"name"`
+	Serial      string `json:"serial"`
+	DerivedRole string `json:"derivedRole"`
 }
 
 // TopologyEnd represents one end of a topology link.
@@ -503,6 +539,9 @@ func (c *MerakiClient) ResolveIPToMAC(ctx context.Context, orgID string, network
 
 		for _, client := range clients {
 			if client.IP == ip {
+				if hostname == "" {
+					hostname = ClientHostname(client)
+				}
 				return client.MAC, network.ID, hostname, nil
 			}
 		}
