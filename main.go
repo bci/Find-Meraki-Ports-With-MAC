@@ -422,7 +422,9 @@ func main() {
 				hn = macToHostname[normMAC]
 			}
 			if hn == "" && ip != "" {
-				hn, _ = meraki.ResolveHostname(ip)
+				if hn = meraki.LookupHostOverride(ip, org.Name, net.Name); hn == "" {
+					hn, _ = meraki.ResolveHostname(ip)
+				}
 			}
 			return ip, hn
 		}
@@ -1604,7 +1606,9 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 			hn = macToHostnameWeb[normMAC]
 		}
 		if hn == "" && ip != "" {
-			hn, _ = meraki.ResolveHostname(ip)
+			if hn = meraki.LookupHostOverride(ip, org.Name, network.Name); hn == "" {
+				hn, _ = meraki.ResolveHostname(ip)
+			}
 		}
 		return ip, hn
 	}

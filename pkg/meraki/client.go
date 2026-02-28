@@ -405,27 +405,51 @@ func (m *MerakiClient) doRequest(ctx context.Context, method, fullURL string) ([
 // Set via SetDNSServers before calling ResolveHostname.
 var customDNSServers []string
 
-// hostOverrides is a static IP→hostname map checked before any DNS lookup.
-// Set via SetHostOverrides before calling ResolveHostname.
-var hostOverrides map[string]string
+// hostOverrides is a scoped IP→hostname map, keyed by "orgName/netName".
+// Use "*" as a wildcard for either part. Set via SetHostOverrides.
+var hostOverrides map[string]map[string]string
 
-// SetHostOverrides installs a static IP-to-hostname map for sites where
+// SetHostOverrides installs a scoped static IP-to-hostname map for sites where
 // the internal DNS server is not reachable from the machine running this tool.
-// Format of the raw string: "ip=hostname,ip=hostname,...".
-// Call with nil to clear overrides.
+//
+// Format: semicolon-separated scope blocks of "orgName/netName:ip=hostname,..."
+// Use * as a wildcard for org or net name. Bare "ip=hostname,..." (no scope
+// prefix containing a /) is treated as "*/*" and matches any org/network.
+//
+// Example:
+//
+//	"Acme Corp/HQ Network:192.168.1.1=gateway;Acme Corp/*:10.0.0.1=core;172.16.0.1=mgmt"
 func SetHostOverrides(raw string) {
-	m := make(map[string]string)
-	for _, pair := range strings.Split(raw, ",") {
-		pair = strings.TrimSpace(pair)
-		if pair == "" {
+	m := make(map[string]map[string]string)
+	for _, block := range strings.Split(raw, ";") {
+		block = strings.TrimSpace(block)
+		if block == "" {
 			continue
 		}
-		parts := strings.SplitN(pair, "=", 2)
-		if len(parts) == 2 {
-			ip := strings.TrimSpace(parts[0])
-			hn := strings.TrimSpace(parts[1])
-			if ip != "" && hn != "" {
-				m[ip] = hn
+		scope := "*/*"
+		pairs := block
+		if idx := strings.Index(block, ":"); idx >= 0 {
+			candidate := block[:idx]
+			if strings.Contains(candidate, "/") {
+				scope = strings.TrimSpace(candidate)
+				pairs = block[idx+1:]
+			}
+		}
+		if _, ok := m[scope]; !ok {
+			m[scope] = make(map[string]string)
+		}
+		for _, pair := range strings.Split(pairs, ",") {
+			pair = strings.TrimSpace(pair)
+			if pair == "" {
+				continue
+			}
+			parts := strings.SplitN(pair, "=", 2)
+			if len(parts) == 2 {
+				ip := strings.TrimSpace(parts[0])
+				hn := strings.TrimSpace(parts[1])
+				if ip != "" && hn != "" {
+					m[scope][ip] = hn
+				}
 			}
 		}
 	}
@@ -434,6 +458,33 @@ func SetHostOverrides(raw string) {
 	} else {
 		hostOverrides = nil
 	}
+}
+
+// LookupHostOverride returns the static hostname override for the given IP
+// within the specified org and network. Lookup priority:
+//  1. orgName/netName  (exact match)
+//  2. orgName/*        (org matches, any network)
+//  3. */netName        (any org, network matches)
+//  4. */*              (global fallback / backward-compat bare entries)
+//
+// Returns "" if no override is found.
+func LookupHostOverride(ip, orgName, netName string) string {
+	if hostOverrides == nil {
+		return ""
+	}
+	for _, key := range []string{
+		orgName + "/" + netName,
+		orgName + "/*",
+		"*/" + netName,
+		"*/*",
+	} {
+		if m, ok := hostOverrides[key]; ok {
+			if hn, ok := m[ip]; ok {
+				return hn
+			}
+		}
+	}
+	return ""
 }
 
 // SetDNSServers configures one or more DNS servers for reverse hostname lookups.
@@ -459,13 +510,6 @@ func SetDNSServers(servers []string) {
 func ResolveHostname(ip string) (string, error) {
 	if ip == "" {
 		return "", nil
-	}
-
-	// Check static overrides first (useful when internal DNS is unreachable).
-	if hostOverrides != nil {
-		if hn, ok := hostOverrides[ip]; ok {
-			return hn, nil
-		}
 	}
 
 	// Use a context with timeout to prevent hanging
