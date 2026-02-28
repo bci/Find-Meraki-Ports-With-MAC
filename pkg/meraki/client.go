@@ -409,49 +409,54 @@ var customDNSServers []string
 // Use "*" as a wildcard for either part. Set via SetHostOverrides.
 var hostOverrides map[string]map[string]string
 
+// hostOverrideEntry is the JSON shape for a single HOST_OVERRIDES entry.
+type hostOverrideEntry struct {
+	Org      string `json:"org"`
+	Net      string `json:"net"`
+	IP       string `json:"ip"`
+	Hostname string `json:"hostname"`
+}
+
 // SetHostOverrides installs a scoped static IP-to-hostname map for sites where
 // the internal DNS server is not reachable from the machine running this tool.
 //
-// Format: semicolon-separated scope blocks of "orgName/netName:ip=hostname,..."
-// Use * as a wildcard for org or net name. Bare "ip=hostname,..." (no scope
-// prefix containing a /) is treated as "*/*" and matches any org/network.
+// Format: JSON array of objects with "org", "net", "ip", and "hostname" fields.
+// Use "*" as a wildcard for "org" or "net". Omitted "org"/"net" fields default to "*".
 //
 // Example:
 //
-//	"Acme Corp/HQ Network:192.168.1.1=gateway;Acme Corp/*:10.0.0.1=core;172.16.0.1=mgmt"
+//	[{"org":"Acme Corp","net":"HQ","ip":"192.168.1.1","hostname":"gateway"},{"org":"*","net":"*","ip":"10.0.0.1","hostname":"core"}]
 func SetHostOverrides(raw string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		hostOverrides = nil
+		return
+	}
+	var entries []hostOverrideEntry
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		hostOverrides = nil
+		return
+	}
 	m := make(map[string]map[string]string)
-	for _, block := range strings.Split(raw, ";") {
-		block = strings.TrimSpace(block)
-		if block == "" {
+	for _, e := range entries {
+		org := strings.TrimSpace(e.Org)
+		net := strings.TrimSpace(e.Net)
+		ip := strings.TrimSpace(e.IP)
+		hn := strings.TrimSpace(e.Hostname)
+		if ip == "" || hn == "" {
 			continue
 		}
-		scope := "*/*"
-		pairs := block
-		if idx := strings.Index(block, ":"); idx >= 0 {
-			candidate := block[:idx]
-			if strings.Contains(candidate, "/") {
-				scope = strings.TrimSpace(candidate)
-				pairs = block[idx+1:]
-			}
+		if org == "" {
+			org = "*"
 		}
+		if net == "" {
+			net = "*"
+		}
+		scope := org + "/" + net
 		if _, ok := m[scope]; !ok {
 			m[scope] = make(map[string]string)
 		}
-		for _, pair := range strings.Split(pairs, ",") {
-			pair = strings.TrimSpace(pair)
-			if pair == "" {
-				continue
-			}
-			parts := strings.SplitN(pair, "=", 2)
-			if len(parts) == 2 {
-				ip := strings.TrimSpace(parts[0])
-				hn := strings.TrimSpace(parts[1])
-				if ip != "" && hn != "" {
-					m[scope][ip] = hn
-				}
-			}
-		}
+		m[scope][ip] = hn
 	}
 	if len(m) > 0 {
 		hostOverrides = m
