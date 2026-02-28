@@ -56,6 +56,7 @@ type NetworkClient struct {
 	RecentDeviceSerial string `json:"recentDeviceSerial"`
 	RecentDeviceName   string `json:"recentDeviceName"`
 	IP                 string `json:"ip"`
+	Hostname           string `json:"hostname"`
 	Description        string `json:"description"`
 	DhcpHostname       string `json:"dhcpHostname"`
 	Notes              string `json:"notes"`
@@ -521,16 +522,19 @@ func isUUIDLike(s string) bool {
 }
 
 // ClientHostname returns the best available hostname for a NetworkClient.
-// Priority: Notes > Description (if not UUID-like) > DhcpHostname
+// Priority: Notes > Hostname (API field) > DhcpHostname > Description (if not UUID-like)
 func ClientHostname(nc NetworkClient) string {
 	if nc.Notes != "" {
 		return nc.Notes
 	}
-	if nc.Description != "" && !isUUIDLike(nc.Description) {
-		return nc.Description
+	if nc.Hostname != "" {
+		return nc.Hostname
 	}
 	if nc.DhcpHostname != "" {
 		return nc.DhcpHostname
+	}
+	if nc.Description != "" && !isUUIDLike(nc.Description) {
+		return nc.Description
 	}
 	return ""
 }
