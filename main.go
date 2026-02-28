@@ -24,6 +24,7 @@ import (
 	"Find-Meraki-Ports-With-MAC/pkg/macaddr"
 	"Find-Meraki-Ports-With-MAC/pkg/meraki"
 	"Find-Meraki-Ports-With-MAC/pkg/output"
+
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/joho/godotenv"
@@ -39,6 +40,7 @@ type Config struct {
 	BaseURL      string // Meraki API base URL
 	MaxRetries   int    // Maximum number of API request retries on 429
 	MacTablePoll int    // MAC table lookup poll attempts (2s each)
+	DNSServers   string // Comma-separated alternate DNS servers for PTR lookups
 	LogFile      string // Path to log file
 	LogLevel     string // Log level: DEBUG, INFO, WARNING, ERROR
 	Verbose      bool   // Enable verbose output
@@ -55,11 +57,11 @@ const (
 )
 
 var (
-	Version    = "dev"     // Version set at build time
-	Commit     = "unknown" // Git commit SHA set at build time
-	BuildTime  = "unknown" // Build timestamp set at build time
-	GoVersion  = "go1.21"  // Go version (can be updated at build time)
-	webAPIKey  string      // API key pre-loaded from .env for the web interface
+	Version   = "dev"     // Version set at build time
+	Commit    = "unknown" // Git commit SHA set at build time
+	BuildTime = "unknown" // Build timestamp set at build time
+	GoVersion = "go1.21"  // Go version (can be updated at build time)
+	webAPIKey string      // API key pre-loaded from .env for the web interface
 )
 
 // ── Log broadcast hub ─────────────────────────────────────────────────────────
@@ -137,6 +139,7 @@ func main() {
 	interactiveFlag := flag.Bool("interactive", false, "Launch web interface mode")
 	retryFlag := flag.Int("retry", 0, "Maximum API retry attempts on rate limit (default: 6)")
 	macPollFlag := flag.Int("mac-table-poll", 0, "MAC table lookup poll attempts, 2s each (default: 15)")
+	dnsServersFlag := flag.String("dns-servers", "", "Comma-separated DNS servers for PTR lookups (e.g. 192.168.1.1,192.168.1.2)")
 	webPortFlag := flag.String("web-port", "", "Port for web server (default: 8080)")
 	webHostFlag := flag.String("web-host", "", "Host for web server (default: localhost)")
 	flag.Usage = func() {
@@ -152,6 +155,7 @@ func main() {
 		BaseURL:      strings.TrimSpace(firstNonEmpty(os.Getenv("MERAKI_BASE_URL"), "https://api.meraki.com/api/v1")),
 		MaxRetries:   firstNonZeroInt(*retryFlag, parseIntEnv("MERAKI_RETRIES"), 6),
 		MacTablePoll: firstNonZeroInt(*macPollFlag, parseIntEnv("MERAKI_MAC_POLL"), 15),
+		DNSServers:   strings.TrimSpace(firstNonEmpty(*dnsServersFlag, os.Getenv("DNS_SERVERS"))),
 		LogFile:      strings.TrimSpace(firstNonEmpty(*logFileFlag, os.Getenv("LOG_FILE"), "Find-Meraki-Ports-With-MAC.log")),
 		LogLevel:     strings.TrimSpace(firstNonEmpty(*logLevelFlag, os.Getenv("LOG_LEVEL"), "DEBUG")),
 		Verbose:      *verboseFlag,
@@ -166,6 +170,11 @@ func main() {
 		cfg.LogLevel = "DEBUG"
 		cfg.LogFile = "" // Empty log file sends logs to console only
 		fmt.Printf("DEBUG: Verbose flag set, LogLevel=%s, LogFile='%s'\n", cfg.LogLevel, cfg.LogFile)
+	}
+
+	// Configure alternate DNS servers for PTR hostname lookups.
+	if cfg.DNSServers != "" {
+		meraki.SetDNSServers(strings.Split(cfg.DNSServers, ","))
 	}
 
 	if *helpFlag {
@@ -685,7 +694,7 @@ func openBrowser(url string) {
 
 // Web handler functions
 func handleHome(w http.ResponseWriter, r *http.Request) {
-tmpl := `<!DOCTYPE html>
+	tmpl := `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -839,8 +848,8 @@ tmpl := `<!DOCTYPE html>
 <script src="/static/js/app.js"></script>
 </body>
 </html>`
-w.Header().Set("Content-Type", "text/html")
-_, _ = w.Write([]byte(tmpl))
+	w.Header().Set("Content-Type", "text/html")
+	_, _ = w.Write([]byte(tmpl))
 }
 
 func handleValidateKey(w http.ResponseWriter, r *http.Request) {

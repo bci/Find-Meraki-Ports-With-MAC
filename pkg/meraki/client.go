@@ -400,6 +400,28 @@ func (m *MerakiClient) doRequest(ctx context.Context, method, fullURL string) ([
 	return nil, "", errors.New("meraki API request failed after retries")
 }
 
+// customDNSServers holds optional user-supplied DNS server addresses (host:port).
+// Set via SetDNSServers before calling ResolveHostname.
+var customDNSServers []string
+
+// SetDNSServers configures one or more DNS servers for reverse hostname lookups.
+// Each entry should be "host" or "host:port"; bare IPs get ":53" appended.
+// Pass nil or an empty slice to revert to the system default resolver.
+func SetDNSServers(servers []string) {
+	cleaned := make([]string, 0, len(servers))
+	for _, s := range servers {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if !strings.Contains(s, ":") {
+			s += ":53"
+		}
+		cleaned = append(cleaned, s)
+	}
+	customDNSServers = cleaned
+}
+
 // ResolveHostname performs reverse DNS lookup on an IP address.
 // Returns the hostname or empty string if lookup fails.
 func ResolveHostname(ip string) (string, error) {
@@ -411,19 +433,35 @@ func ResolveHostname(ip string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	resolver := net.DefaultResolver
+	if len(customDNSServers) > 0 {
+		servers := customDNSServers // capture for closure
+		resolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				d := net.Dialer{Timeout: 3 * time.Second}
+				// Try each configured server, return on first success.
+				var lastErr error
+				for _, srv := range servers {
+					conn, err := d.DialContext(ctx, "udp", srv)
+					if err == nil {
+						return conn, nil
+					}
+					lastErr = err
+				}
+				return nil, lastErr
+			},
+		}
+	}
+
 	// Perform reverse DNS lookup
-	names, err := net.DefaultResolver.LookupAddr(ctx, ip)
-	if err != nil {
+	names, err := resolver.LookupAddr(ctx, ip)
+	if err != nil || len(names) == 0 {
 		return "", err
 	}
 
-	if len(names) == 0 {
-		return "", nil
-	}
-
 	// Return the first name, trim trailing dot
-	hostname := strings.TrimSuffix(names[0], ".")
-	return hostname, nil
+	return strings.TrimSuffix(names[0], "."), nil
 }
 
 // isUUIDLike returns true if s matches the xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx pattern.
