@@ -404,6 +404,37 @@ func (m *MerakiClient) doRequest(ctx context.Context, method, fullURL string) ([
 // Set via SetDNSServers before calling ResolveHostname.
 var customDNSServers []string
 
+// hostOverrides is a static IP→hostname map checked before any DNS lookup.
+// Set via SetHostOverrides before calling ResolveHostname.
+var hostOverrides map[string]string
+
+// SetHostOverrides installs a static IP-to-hostname map for sites where
+// the internal DNS server is not reachable from the machine running this tool.
+// Format of the raw string: "ip=hostname,ip=hostname,...".
+// Call with nil to clear overrides.
+func SetHostOverrides(raw string) {
+	m := make(map[string]string)
+	for _, pair := range strings.Split(raw, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) == 2 {
+			ip := strings.TrimSpace(parts[0])
+			hn := strings.TrimSpace(parts[1])
+			if ip != "" && hn != "" {
+				m[ip] = hn
+			}
+		}
+	}
+	if len(m) > 0 {
+		hostOverrides = m
+	} else {
+		hostOverrides = nil
+	}
+}
+
 // SetDNSServers configures one or more DNS servers for reverse hostname lookups.
 // Each entry should be "host" or "host:port"; bare IPs get ":53" appended.
 // Pass nil or an empty slice to revert to the system default resolver.
@@ -427,6 +458,13 @@ func SetDNSServers(servers []string) {
 func ResolveHostname(ip string) (string, error) {
 	if ip == "" {
 		return "", nil
+	}
+
+	// Check static overrides first (useful when internal DNS is unreachable).
+	if hostOverrides != nil {
+		if hn, ok := hostOverrides[ip]; ok {
+			return hn, nil
+		}
 	}
 
 	// Use a context with timeout to prevent hanging

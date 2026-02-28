@@ -177,6 +177,11 @@ func main() {
 		meraki.SetDNSServers(strings.Split(cfg.DNSServers, ","))
 	}
 
+	// Configure static IP→hostname overrides (for when internal DNS is unreachable).
+	if v := strings.TrimSpace(os.Getenv("HOST_OVERRIDES")); v != "" {
+		meraki.SetHostOverrides(v)
+	}
+
 	if *helpFlag {
 		printUsage(os.Stdout)
 		return
