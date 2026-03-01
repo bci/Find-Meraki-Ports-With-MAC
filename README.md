@@ -104,7 +104,7 @@ Find-Meraki-Ports-With-MAC.exe --version
 
 Output:
 ```
-Find-Meraki-Ports-With-MAC version 1.1.0
+Find-Meraki-Ports-With-MAC version 1.2.0
   Commit:     a1b2c3d
   Build Time: 2024-01-15T10:30:00Z
   Go Version: go1.21

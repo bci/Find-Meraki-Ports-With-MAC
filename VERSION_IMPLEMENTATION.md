@@ -26,7 +26,7 @@ The application now supports:
 
 **Output**:
 ```
-Find-Meraki-Ports-With-MAC version 1.1.0
+Find-Meraki-Ports-With-MAC version 1.2.0
   Commit:     a1b2c3d
   Build Time: 2024-01-15T10:30:00Z
   Go Version: go1.21
@@ -38,7 +38,7 @@ Find-Meraki-Ports-With-MAC version 1.1.0
 ```bash
 go build -ldflags \
   "-s -w \
-   -X main.Version=1.1.0 \
+   -X main.Version=1.2.0 \
    -X main.Commit=abc1234 \
    -X main.BuildTime=2024-01-15T10:30:00Z" \
   -o Find-Meraki-Ports-With-MAC .
@@ -71,7 +71,7 @@ go build -ldflags \
 
 #### GitHub Actions (.github/workflows/test.yml)
 - Runs on every push/PR
-- Automatically injects version 1.1.0 + commit + timestamp
+- Automatically injects version 1.2.0 + commit + timestamp
 - Uploads artifacts with full version metadata
 
 ## Design Benefits
@@ -116,17 +116,17 @@ The application is now ready for release with:
 ✅ Static binary optimization (no runtime deps)  
 ✅ Full test coverage with race detection  
 
-## Next Steps for v1.1.0 Release
+## Next Steps for v1.2.0 Release
 
-1. Create git tag: `git tag -a v1.1.0 -m "Release v1.1.0"`
+1. Create git tag: `git tag -a v1.2.0 -m "Release v1.2.0"`
 2. Build all platforms: `make build-all` (automatically injects version)
 3. Create GitHub release with binaries
 4. Update version in build scripts for next release
 
-Example v1.1.0 release binary output:
+Example v1.2.0 release binary output:
 ```
 $ ./Find-Meraki-Ports-With-MAC-darwin-arm64 --version
-Find-Meraki-Ports-With-MAC version 1.1.0
+Find-Meraki-Ports-With-MAC version 1.2.0
   Commit:     a1b2c3d
   Build Time: 2024-01-15T10:30:00Z
   Go Version: go1.21
