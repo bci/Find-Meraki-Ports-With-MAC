@@ -16,7 +16,7 @@ $env:GOARCH = ""
 $env:CGO_ENABLED = ""
 
 $AppName = "Find-Meraki-Ports-With-MAC"
-$Version = "1.1.0"
+$Version = "1.2.0"
 $OutputDir = "bin"
 
 # Run unit tests

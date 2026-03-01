@@ -1,7 +1,7 @@
 .PHONY: all clean build-windows build-darwin build-linux build-all help test lint
 
 APP_NAME := Find-Meraki-Ports-With-MAC
-VERSION := 1.0.0
+VERSION := 1.2.0
 OUTPUT_DIR := bin
 # Static build flags: no CGO, strip symbols, inject version metadata at build time
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
