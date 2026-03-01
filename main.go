@@ -48,6 +48,7 @@ type Config struct {
 	PortFilter   string // Port filter
 	TestFull     bool   // Display complete MAC forwarding table
 	IPAddress    string // IP address to resolve
+	MACAddress   string // MAC address or pattern to look up
 }
 
 // Version information injected at build time via ldflags.
@@ -57,11 +58,15 @@ const (
 )
 
 var (
-	Version   = "dev"     // Version set at build time
-	Commit    = "unknown" // Git commit SHA set at build time
-	BuildTime = "unknown" // Build timestamp set at build time
-	GoVersion = "go1.21"  // Go version (can be updated at build time)
-	webAPIKey string      // API key pre-loaded from .env for the web interface
+	Version          = "dev"     // Version set at build time
+	Commit           = "unknown" // Git commit SHA set at build time
+	BuildTime        = "unknown" // Build timestamp set at build time
+	GoVersion        = "go1.21"  // Go version (can be updated at build time)
+	webAPIKey        string      // API key pre-loaded from .env for the web interface
+	webPresetMAC     string      // pre-filled MAC from CLI --mac
+	webPresetIP      string      // pre-filled IP from CLI --ip
+	webPresetOrgName string      // pre-selected org name from CLI --org
+	webPresetNetwork string      // pre-selected network name from CLI --network
 )
 
 // ── Log broadcast hub ─────────────────────────────────────────────────────────
@@ -163,6 +168,7 @@ func main() {
 		PortFilter:   strings.TrimSpace(*portFlag),
 		TestFull:     *testFullTableFlag,
 		IPAddress:    strings.TrimSpace(*ipFlag),
+		MACAddress:   strings.TrimSpace(*macFlag),
 	}
 
 	// If verbose flag is set, override log level to DEBUG and send logs to console
@@ -644,14 +650,23 @@ func main() {
 }
 
 func startWebServer(cfg Config, host, port string) {
-	webAPIKey = cfg.APIKey // expose to handlers
+	webAPIKey = cfg.APIKey
+	webPresetMAC = cfg.MACAddress
+	webPresetIP = cfg.IPAddress
+	webPresetOrgName = cfg.OrgName
+	webPresetNetwork = cfg.NetworkName
 	log := newWebLogger()
 	log.Infof("Starting web server on %s:%s", host, port)
 
 	r := mux.NewRouter()
 
-	// Static files
-	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
+	// Static files — served with no-cache so the browser always fetches the
+	// latest JS/CSS after a binary rebuild (development tool on localhost).
+	staticHandler := http.StripPrefix("/static/", http.FileServer(http.Dir("./static/")))
+	r.PathPrefix("/static/").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		staticHandler.ServeHTTP(w, req)
+	})
 
 	// API routes
 	r.HandleFunc("/", handleHome).Methods("GET")
@@ -804,6 +819,7 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
           <div class="results-toolbar">
             <span class="results-count" id="resultsCount"></span>
           </div>
+          <div id="uplinkNote" class="hidden uplink-note"></div>
           <div class="table-wrap">
             <table id="resultsTable">
               <thead>
@@ -896,7 +912,11 @@ func handleValidateKey(w http.ResponseWriter, r *http.Request) {
 func handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"apiKey": webAPIKey,
+		"apiKey":        webAPIKey,
+		"presetMAC":     webPresetMAC,
+		"presetIP":      webPresetIP,
+		"presetOrg":     webPresetOrgName,
+		"presetNetwork": webPresetNetwork,
 	})
 }
 
@@ -966,10 +986,11 @@ func handleResolve(w http.ResponseWriter, r *http.Request) {
 	var allResults []output.ResultRow
 	for _, netID := range networkIDs {
 		cfg := Config{
-			APIKey:      req.APIKey,
-			OrgID:       req.OrgID,
-			NetworkName: netID,
-			LogLevel:    "INFO",
+			APIKey:       req.APIKey,
+			OrgID:        req.OrgID,
+			NetworkName:  netID,
+			LogLevel:     "INFO",
+			MacTablePoll: firstNonZeroInt(parseIntEnv("MERAKI_MAC_POLL"), 15),
 		}
 		results, err := resolveDevices(cfg, req.MAC, req.IP)
 		if err != nil {
@@ -1924,6 +1945,10 @@ func printUsage(w *os.File) {
 	fmt.Fprintln(w, "  --log-level <DEBUG|INFO|WARNING|ERROR>  Log level (default from .env)")
 	fmt.Fprintln(w, "  --retry <n>                 Max API retry attempts on rate limit (default: 6)")
 	fmt.Fprintln(w, "  --mac-table-poll <n>        MAC table lookup poll attempts, 2s each (default: 15)")
+	fmt.Fprintln(w, "  --dns-servers <addr,...>    Comma-separated DNS servers for PTR lookups")
+	fmt.Fprintln(w, "  --interactive               Launch interactive web interface")
+	fmt.Fprintln(w, "  --web-port <port>           Web server port (default: 8080)")
+	fmt.Fprintln(w, "  --web-host <host>           Web server host (default: localhost)")
 	fmt.Fprintln(w, "  --version                   Show version and exit")
 	fmt.Fprintln(w, "  --help                      Show this help")
 	fmt.Fprintln(w, "")
@@ -1935,6 +1960,7 @@ func printUsage(w *os.File) {
 	fmt.Fprintln(w, "  MERAKI_BASE_URL    API base URL (default https://api.meraki.com/api/v1)")
 	fmt.Fprintln(w, "  MERAKI_RETRIES     Max API retry attempts on rate limit (default 6)")
 	fmt.Fprintln(w, "  MERAKI_MAC_POLL    MAC table lookup poll attempts, 2s each (default 15)")
+	fmt.Fprintln(w, "  DNS_SERVERS        Comma-separated DNS servers for PTR lookups")
 	fmt.Fprintln(w, "  LOG_FILE           Log file path (default Find-Meraki-Ports-With-MAC.log)")
 	fmt.Fprintln(w, "  LOG_LEVEL          DEBUG | INFO | WARNING | ERROR")
 	fmt.Fprintln(w, "")
@@ -1947,6 +1973,8 @@ func printUsage(w *os.File) {
 	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --list-orgs")
 	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --list-networks --org \"My Org\"")
 	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --test-api")
+	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --interactive")
+	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --interactive --web-port 9090")
 }
 
 // writeOrganizations writes a formatted list of organizations to the specified file.

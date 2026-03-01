@@ -220,6 +220,12 @@ body {
 .toast-info    { background:#ebf8ff; border:1px solid #90cdf4; color:#2a5f8f; }
 .toast-warn    { background:#fffbeb; border:1px solid #fbd38d; color:#744210; }
 
+/* Uplink / trunk-port advisory note */
+.uplink-note { margin:0 0 12px; padding:10px 14px; background:#1c2b3a; border-left:3px solid #f59e0b; border-radius:0 6px 6px 0; font-size:.85rem; color:#cbd5e1; line-height:1.6; }
+.uplink-note ul { margin:6px 0 0 18px; }
+.uplink-note code { background:#0f172a; padding:1px 5px; border-radius:3px; font-family:monospace; font-size:.82rem; }
+.uplink-note-extra { margin-top:6px; color:#fbbf24; }
+
 .status-row { display:flex; align-items:center; gap:6px; font-size:.8rem; color:var(--gray-600); padding:4px 0; }
 .dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
 .dot-ok   { background:var(--green); box-shadow:0 0 0 3px rgba(56,161,105,.2); }

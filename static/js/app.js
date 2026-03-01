@@ -12,6 +12,9 @@ class App {
     this.logFilter = 'DEBUG';
     this._sortCol = null;
     this._sortDir = 1; // 1 = asc, -1 = desc
+    this._preset = { mac: '', ip: '', org: '', network: '' };
+    this._autoResolvePending = false;
+    this._presetApplied = false;
 
     this._restorePrefs();
     this._bindEvents();
@@ -25,6 +28,14 @@ class App {
     try {
       const res = await fetch('/api/config');
       const data = await res.json();
+      // Store presets from CLI flags
+      this._preset = {
+        mac:     data.presetMAC     || '',
+        ip:      data.presetIP      || '',
+        org:     data.presetOrg     || '',
+        network: data.presetNetwork || ''
+      };
+      this._autoResolvePending = !!(this._preset.mac || this._preset.ip);
       if (data.apiKey) {
         this.apiKey = data.apiKey;
         document.getElementById('apiKey').value = '••••••••••••••••';
@@ -59,8 +70,18 @@ class App {
       this._setStatus('Connected', 'ok');
       this.toast('API key validated — ' + this.orgs.length + ' org(s) found', 'success');
 
-      // Restore previously selected org
-      if (this._savedOrg) {
+      // Prefer preset org (by name) over saved prefs, then single-org auto-select
+      const preset = this._preset || {};
+      if (preset.org) {
+        const match = this.orgs.find(o => o.name === preset.org);
+        if (match) {
+          document.getElementById('orgSelect').value = match.id;
+          document.getElementById('orgSelect').dispatchEvent(new Event('change'));
+          return;
+        }
+      }
+      // Restore previously selected org (validate it still exists for this key)
+      if (this._savedOrg && this.orgs.some(o => o.id === this._savedOrg)) {
         document.getElementById('orgSelect').value = this._savedOrg;
         document.getElementById('orgSelect').dispatchEvent(new Event('change'));
       } else if (this.orgs.length === 1) {
@@ -100,15 +121,32 @@ class App {
         opt.value = n.id; opt.textContent = n.name;
         sel.appendChild(opt);
       });
+      // Prefer preset network (by name) over saved prefs
+      const preset = this._preset || {};
+      if (preset.network) {
+        if (preset.network.toUpperCase() === 'ALL') {
+          sel.value = 'ALL';
+        } else {
+          const match = this.networks.find(n => n.name === preset.network);
+          if (match) sel.value = match.id;
+        }
+        sel.dispatchEvent(new Event('change'));
+        return;
+      }
       // restore / auto-select
       if (this._savedNetwork) {
-        sel.value = this._savedNetwork;
-        sel.dispatchEvent(new Event('change'));
-      } else {
-        // Default to All Networks
-        sel.value = 'ALL';
-        sel.dispatchEvent(new Event('change'));
+        // Only restore if the network ID still exists in this org; otherwise fall through to ALL
+        const stillValid = this._savedNetwork === 'ALL' ||
+          this.networks.some(n => n.id === this._savedNetwork);
+        if (stillValid) {
+          sel.value = this._savedNetwork;
+          sel.dispatchEvent(new Event('change'));
+          return;
+        }
       }
+      // Default to All Networks
+      sel.value = 'ALL';
+      sel.dispatchEvent(new Event('change'));
     } catch (e) { this.toast('Failed to load networks: ' + e.message, 'error'); }
   }
 
@@ -351,8 +389,10 @@ class App {
     const tbody = document.getElementById('resultsTbody');
     const count = document.getElementById('resultsCount');
     const exportBtns = document.getElementById('exportBtns');
+    const noteEl = document.getElementById('uplinkNote');
 
     tbody.innerHTML = '';
+    noteEl.innerHTML = ''; noteEl.classList.add('hidden');
     if (!this.results || this.results.length === 0) {
       tbody.innerHTML = '<tr><td colspan="9" class="no-results">No results — enter a MAC or IP address and click Resolve.</td></tr>';
       count.textContent = '';
@@ -409,6 +449,28 @@ class App {
 
       tbody.appendChild(tr);
     });
+
+    // Uplink note: show when any result was found on a trunk port
+    const trunkResults = sorted.filter(r => r.portMode === 'trunk');
+    if (trunkResults.length > 0) {
+      const allTrunk = sorted.every(r => r.portMode === 'trunk');
+      const items = trunkResults.map(r =>
+        '<li><strong>' + this._esc(r.deviceName || r.switchName || r.deviceSerial || '—') +
+        '</strong> — port <code>' + this._esc(r.port || '—') + '</code>' +
+        (r.networkName ? ' <span style="opacity:.6">(' + this._esc(r.networkName) + ')</span>' : '') +
+        '</li>'
+      ).join('');
+      let extra = '';
+      if (allTrunk) {
+        extra = '<p class="uplink-note-extra">All results are on trunk/uplink ports — the device is not directly attached to any of these switches. It may be connected to a different Meraki network; try searching all networks.</p>';
+      }
+      noteEl.innerHTML =
+        '<strong>&#9432; Note:</strong> The following switch' + (trunkResults.length > 1 ? 'es' : '') +
+        ' found this MAC address on a trunk/uplink port. The device is likely connected further downstream — ' +
+        'look for a result with an <em>access</em> port for the actual connection point.' +
+        '<ul>' + items + '</ul>' + extra;
+      noteEl.classList.remove('hidden');
+    }
   }
 
   // ── Export ────────────────────────────────────────────────
@@ -469,6 +531,17 @@ class App {
   _showResolve() {
     document.getElementById('resolveSection').classList.remove('hidden');
     document.getElementById('mfrRow').classList.add('hidden');
+    // Apply CLI presets to inputs once when the section first becomes visible
+    if (!this._presetApplied && (this._preset.mac || this._preset.ip)) {
+      this._presetApplied = true;
+      if (this._preset.mac) document.getElementById('macInput').value = this._preset.mac;
+      if (this._preset.ip)  document.getElementById('ipInput').value  = this._preset.ip;
+    }
+    // Auto-resolve once if CLI supplied MAC or IP
+    if (this._autoResolvePending) {
+      this._autoResolvePending = false;
+      setTimeout(() => this._resolve(), 0);
+    }
   }
   _hideResolve() {
     document.getElementById('resolveSection').classList.add('hidden');
