@@ -35,12 +35,25 @@ Create a cross-platform Go CLI application named `Find-Meraki-Ports-With-MAC` th
 - `--switch <name>` - Filter by switch name (case-insensitive substring match)
 - `--port <port>` - Filter by port name or number
 
+**IP Lookup:**
+- `--ip <address>` - IP address to resolve to a MAC address and port (uses PTR/ARP records)
+
 **Troubleshooting:**
 - `--list-orgs` - List all accessible organizations and exit
 - `--list-networks` - List all networks for the organization and exit
 - `--test-api` - Validate API key and connectivity
 - `--test-full-table` - Display complete MAC forwarding table (respects --switch and --port filters)
 - `--verbose` - Show detailed search progress (organizations, networks, switches)
+
+**Advanced:**
+- `--retry <n>` - Maximum API retry attempts on HTTP 429 (default: 6; env: `MERAKI_RETRIES`)
+- `--mac-table-poll <n>` - MAC table lookup poll attempts, 2s each (default: 15; env: `MERAKI_MAC_POLL`)
+- `--dns-servers <csv>` - Comma-separated DNS servers for PTR lookups (e.g. `192.168.1.1,8.8.8.8`; env: `DNS_SERVERS`)
+
+**Web Interface:**
+- `--interactive` - Launch the interactive web UI (HTTP server)
+- `--web-port <port>` - Port for the web server (default: `8080`)
+- `--web-host <host>` - Host/IP to bind the web server to (default: `localhost`)
 
 **Logging:**
 - `--log-file <path>` - Log file path (default from .env)
@@ -71,6 +84,16 @@ Find-Meraki-Ports-With-MAC.exe --test-full-table --network "City" --switch ccc93
 # HTML output format
 Find-Meraki-Ports-With-MAC.exe --mac 00:11:22:33:44:55 --network ALL --output-format html
 
+# Lookup by IP address
+Find-Meraki-Ports-With-MAC.exe --ip 192.168.1.100 --network "City"
+
+# Launch interactive web UI
+Find-Meraki-Ports-With-MAC.exe --interactive
+Find-Meraki-Ports-With-MAC.exe --interactive --mac 00:11:22:33:44:55 --org "My Org" --network "City"
+
+# Use custom DNS for PTR lookups
+Find-Meraki-Ports-With-MAC.exe --mac 00:11:22:33:44:55 --network ALL --dns-servers 192.168.1.1,192.168.1.2
+
 # Troubleshooting
 Find-Meraki-Ports-With-MAC.exe --list-orgs
 Find-Meraki-Ports-With-MAC.exe --list-networks --org "My Org"
@@ -85,6 +108,10 @@ Find-Meraki-Ports-With-MAC.exe --test-api
 - `MERAKI_NETWORK` (optional) - Default network name or `ALL`
 - `OUTPUT_FORMAT` (optional) - Default output format: `csv`, `text`, or `html`
 - `MERAKI_BASE_URL` (optional) - API base URL (default: `https://api.meraki.com/api/v1`)
+- `MERAKI_RETRIES` (optional) - Maximum API retry attempts on HTTP 429 (default: 6)
+- `MERAKI_MAC_POLL` (optional) - MAC table lookup poll attempts, 2s each (default: 15)
+- `DNS_SERVERS` (optional) - Comma-separated DNS servers for PTR lookups
+- `HOST_OVERRIDES` (optional) - Static IP→hostname override map for when internal DNS is unreachable (format: `ip=hostname,ip=hostname`)
 - `LOG_FILE` (optional) - Log file path (default: `Find-Meraki-Ports-With-MAC.log`)
 - `LOG_LEVEL` (optional) - Default log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`
 
@@ -247,14 +274,35 @@ Filter devices where:
 - Switch Serial
 - Port (prefer: `interface` > `portId` > `switchportName` > `switchport` > `port`)
 - MAC Address (colon-separated format)
+- IP Address (resolved from ARP/PTR when available)
+- Hostname (from PTR DNS lookup)
+- VLAN (integer)
+- Port Mode (`access`, `trunk`, or empty)
 - Last Seen (timestamp)
+
+These map to `pkg/output.ResultRow`:
+```go
+type ResultRow struct {
+    OrgName      string
+    NetworkName  string
+    SwitchName   string
+    SwitchSerial string
+    Port         string
+    MAC          string
+    LastSeen     string
+    IP           string
+    Hostname     string
+    VLAN         int
+    PortMode     string // "access", "trunk", or ""
+}
+```
 
 ### Output Formats
 
 **CSV (default):**
 ```csv
-Org,Network,Switch,Serial,Port,MAC,LastSeen
-My Org,City,ccc9300xa,QXXX-XXXX-XXXX,3,00:11:22:33:44:55,2026-02-13T10:30:00Z
+Org,Network,Switch,Serial,Port,MAC,IP,Hostname,LastSeen
+My Org,City,ccc9300xa,QXXX-XXXX-XXXX,3,00:11:22:33:44:55,192.168.1.100,myhost.local,2026-02-13T10:30:00Z
 ```
 
 **Text:**
@@ -265,6 +313,8 @@ Switch: ccc9300xa
 Serial: QXXX-XXXX-XXXX
 Port: 3
 MAC: 00:11:22:33:44:55
+IP: 192.168.1.100
+Hostname: myhost.local
 Last Seen: 2026-02-13T10:30:00Z
 ```
 
@@ -272,10 +322,10 @@ Last Seen: 2026-02-13T10:30:00Z
 ```html
 <table>
   <thead>
-    <tr><th>Org</th><th>Network</th><th>Switch</th><th>Serial</th><th>Port</th><th>MAC</th><th>Last Seen</th></tr>
+    <tr><th>Org</th><th>Network</th><th>Switch</th><th>Serial</th><th>Port</th><th>MAC</th><th>IP</th><th>Hostname</th><th>Last Seen</th></tr>
   </thead>
   <tbody>
-   <tr><td>My Org</td><td>City</td><td>ccc9300xa</td><td>QXXX-XXXX-XXXX</td><td>3</td><td>00:11:22:33:44:55</td><td>2026-02-13T10:30:00Z</td></tr>
+    <tr><td>My Org</td><td>City</td><td>ccc9300xa</td><td>QXXX-XXXX-XXXX</td><td>3</td><td>00:11:22:33:44:55</td><td>192.168.1.100</td><td>myhost.local</td><td>2026-02-13T10:30:00Z</td></tr>
   </tbody>
 </table>
 ```
@@ -398,25 +448,32 @@ Find-Meraki-Ports-With-MAC/
 
 ### main.go Structure
 
-The main.go file has been refactored to ~530 lines using the modular packages:
+The main.go file is ~2,000 lines and includes the CLI core, web server, and all HTTP handlers.
 
 ```go
 package main
 
-// Imports: Standard library + pkg/* + godotenv
+// Imports: Standard library + pkg/* + godotenv + gorilla/mux + gorilla/websocket
 
 // Config struct - all configuration from flags and .env
 type Config struct {
-    APIKey       string
-    OrgName      string
-    NetworkName  string
-    OutputFormat string
-    LogFile      string
-    LogLevel     string
-    Verbose      bool
-    SwitchFilter string
-    PortFilter   string
-    TestFull     bool
+    APIKey       string // Meraki Dashboard API key
+    OrgName      string // Organization name filter
+    OrgID        string // Organization ID (web path: direct lookup)
+    NetworkName  string // Network name filter or "ALL"
+    OutputFormat string // Output format: csv, text, or html
+    BaseURL      string // Meraki API base URL
+    MaxRetries   int    // Max API retries on HTTP 429 (default 6)
+    MacTablePoll int    // Poll attempts for live MAC table (default 15)
+    DNSServers   string // Comma-separated DNS servers for PTR lookups
+    LogFile      string // Path to log file
+    LogLevel     string // Log level: DEBUG, INFO, WARNING, ERROR
+    Verbose      bool   // Enable verbose output (DEBUG to console)
+    SwitchFilter string // Switch name filter
+    PortFilter   string // Port filter
+    TestFull     bool   // Display complete MAC forwarding table
+    IPAddress    string // IP address to resolve
+    MACAddress   string // MAC address or pattern to look up
 }
 
 // Main flow:
@@ -440,13 +497,18 @@ type Config struct {
 
 // Helper functions:
 // - firstNonEmpty: Returns first non-empty string
+// - firstNonZeroInt: Returns first non-zero int (used for MaxRetries, MacTablePoll)
+// - parseIntEnv: Parses an integer from an env var
 // - exitWithError: Logs error and exits
 // - selectOrganization: Finds org by name
 // - selectNetworks: Filters networks by name or ALL
 // - addResult: Deduplicates and adds results
 // - printUsage: Displays help text
+// - printVersion: Displays version/commit/build info
 // - writeOrganizations: Formats org list
 // - writeNetworksForOrg: Formats network list
+// - resolveDevices: Core lookup — called by both CLI and web /api/resolve handler
+// - startWebServer: Gorilla mux router, static file serving, all HTTP handlers
 ```
 
 ## Documentation Standards
@@ -560,8 +622,15 @@ module Find-Meraki-Ports-With-MAC
 
 go 1.21
 
-require github.com/joho/godotenv v1.5.1
+require (
+    github.com/joho/godotenv v1.5.1
+    github.com/gorilla/mux v1.8.1
+    github.com/gorilla/websocket v1.5.1
+)
 ```
+
+`gorilla/mux` is used for the web UI HTTP routing. `gorilla/websocket` is used for the
+`/ws/logs` endpoint that streams live log events to the browser.
 
 ## Build & Distribution
 
@@ -862,6 +931,41 @@ Find-Meraki-Ports-With-MAC.log
 - Log all failures with full context
 - Provide fallback strategies (live lookup → device clients)
 - Handle partial failures gracefully (continue to next switch if one fails)
+
+## Versioning
+
+Version information is injected at build time via `ldflags`:
+
+```
+go build -ldflags "-X main.Version=1.2.3 -X main.Commit=$(git rev-parse --short HEAD) -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+```
+
+Package-level vars (zero values shown as defaults):
+```go
+var (
+    Version   = "dev"     // set at build time
+    Commit    = "unknown" // git SHA
+    BuildTime = "unknown" // RFC3339 timestamp
+    GoVersion = "go1.21"  // can be overridden at build time
+)
+const RepositoryURL = "https://github.com/BEHRConsulting/find-meraki-switch-for-mac"
+```
+
+`--version` calls `printVersion(w io.Writer)` which prints all four values plus the repository URL.
+
+## Interactive Web UI
+
+The `--interactive` flag activates a full single-page web interface for Meraki port lookup.
+This is a substantial addition (~1,400 lines of `main.go` plus `static/`). See
+[prompt-interactive.md](prompt-interactive.md) for the complete as-built specification covering:
+
+- All HTTP routes and handler signatures
+- `handleGetConfig` preset fields
+- `handleResolve` MacTablePoll fix
+- WebSocket log broadcast hub (`wsLogHub`)
+- `static/js/app.js` — full `App` class with preset/auto-resolve logic
+- `static/css/style.css` — design tokens and all class names
+- Known bugs fixed (caching, MacTablePoll=0, stale saved prefs)
 
 ## License & Attribution
 
