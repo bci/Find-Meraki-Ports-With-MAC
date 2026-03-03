@@ -821,69 +821,30 @@ type LLDPCDPData struct {
 	SourceMac string                            `json:"sourceMac"`
 }
 
-// GetDeviceUplinkPorts returns the set of port IDs on the given device that are
-// confirmed switch-to-switch uplinks according to LLDP/CDP neighbor data.
-//
-// Detection strategy (in priority order):
-//  1. LLDP systemCapabilities contains "S-VLAN" or "Bridge" → confirmed switch uplink.
-//     This is the most reliable signal; APs advertise "Two-port MAC Relay" instead.
-//  2. CDP capabilities contains "Switch" AND NOT "Router" → confirmed switch uplink.
-//     APs advertise "Router, Switch" so we require the absence of "Router" to exclude them.
-//     Third-party switches (e.g. GTrans) that only advertise "Switch" are included.
-//
-// Ports absent from lldpCdp (e.g. uplinks to silent/non-LLDP devices) cannot be
-// detected here and must be identified by other means (e.g. MAC table lookup).
+// GetDeviceUplinkPorts returns the set of port IDs on the given switch that are
+// marked as uplinks by the Meraki platform, using the switch port statuses API
+// (/devices/{serial}/switch/ports/statuses). This mirrors exactly what the
+// Meraki console shows as "uplink" — including ports connected to ISP routers,
+// core switches, and other upstream devices regardless of whether they speak
+// LLDP or CDP.
 // Returns an empty set (never nil) on error.
 func (m *MerakiClient) GetDeviceUplinkPorts(ctx context.Context, serial string) map[string]struct{} {
-	path := fmt.Sprintf("/devices/%s/lldpCdp", serial)
+	path := fmt.Sprintf("/devices/%s/switch/ports/statuses", serial)
 	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
 	if err != nil {
 		return map[string]struct{}{}
 	}
-	// The LLDP/CDP response ports field is:
-	//   { "portId": { "cdp": {...}, "lldp": {...}, "deviceMac": "...", "device": {"url": "..."} } }
-	// "device.url" and "cdp" are siblings at the port level, not nested inside each protocol.
-	var raw struct {
-		Ports map[string]map[string]json.RawMessage `json:"ports"`
+	var ports []struct {
+		PortID   string `json:"portId"`
+		IsUplink bool   `json:"isUplink"`
 	}
-	if err := json.Unmarshal(body, &raw); err != nil {
+	if err := json.Unmarshal(body, &ports); err != nil {
 		return map[string]struct{}{}
 	}
 	uplinks := make(map[string]struct{})
-	for portID, portData := range raw.Ports {
-		isSwitchNeighbor := false
-
-		// Priority 1: LLDP systemCapabilities — most reliable; APs report "Two-port MAC Relay".
-		if lldpRaw, ok := portData["lldp"]; ok {
-			var lldp struct {
-				SystemCapabilities string `json:"systemCapabilities"`
-			}
-			if json.Unmarshal(lldpRaw, &lldp) == nil {
-				caps := lldp.SystemCapabilities
-				if strings.Contains(caps, "S-VLAN") || strings.Contains(caps, "Bridge") {
-					isSwitchNeighbor = true
-				}
-			}
-		}
-
-		// Priority 2: CDP capabilities — only if LLDP didn't already confirm.
-		// Require "Switch" WITHOUT "Router" to exclude APs ("Router, Switch").
-		if !isSwitchNeighbor {
-			if cdpRaw, ok := portData["cdp"]; ok {
-				var cdp struct {
-					Capabilities string `json:"capabilities"`
-				}
-				if json.Unmarshal(cdpRaw, &cdp) == nil {
-					caps := cdp.Capabilities
-					if strings.Contains(caps, "Switch") && !strings.Contains(caps, "Router") {
-						isSwitchNeighbor = true
-					}
-				}
-			}
-		}
-
-		if isSwitchNeighbor {
-			uplinks[portID] = struct{}{}
+	for _, p := range ports {
+		if p.IsUplink {
+			uplinks[p.PortID] = struct{}{}
 		}
 	}
 	return uplinks
