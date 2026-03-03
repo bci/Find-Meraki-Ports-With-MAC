@@ -1086,9 +1086,13 @@ func handleTestResolve(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(120 * time.Millisecond)
 	}
 
+	const resolvedIP = "10.10.1.42"
+
 	log(fmt.Sprintf("[INFO] Starting MAC lookup for %s across all networks", mac))
 	log("[INFO] Fetching organization list from Acme Corporation")
 	log("[INFO] Found 4 networks: HQ Campus, Warehouse, City Parks, Remote Office")
+	log(fmt.Sprintf("[INFO] Resolving IP address for MAC %s via ARP table...", mac))
+	log(fmt.Sprintf("[INFO] Resolved IP: %s → %s (hostname: laptop-jsmith.acme.local)", mac, resolvedIP))
 
 	log("[INFO] [HQ Campus] Scanning 3 switches...")
 	log(fmt.Sprintf("[INFO] [HQ Campus] sw-hq-access-ms355 — MAC %s found on port 12 (access, VLAN 100)", mac))
