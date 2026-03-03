@@ -186,6 +186,8 @@ func TestResolveHostname(t *testing.T) {
 	}
 }
 
+// TestParseAggrPort is kept here for backward compat; the function now lives in resolve.go.
+// Additional parseAggrPort and isPortUplink tests are in resolve_test.go.
 func TestParseAggrPort(t *testing.T) {
 	tests := []struct {
 		name       string
