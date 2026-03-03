@@ -952,25 +952,32 @@ func handleTestGetNetworks(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// testDemoResults returns a realistic set of sanitised demo results for a
-// single MAC address found across multiple networks and switch types.
-// The searched MAC is consistently on VLAN 100 everywhere it appears.
-// Each network contributes one access result plus its upstream uplink(s),
-// showcasing MS355, MS450, C9300, AGGR ports, and ISP uplink detection.
+// testDemoResults returns a realistic set of demo results for a single MAC
+// address found within one network.  A MAC is burned into hardware — it lives
+// on exactly one access port (the switch the device is physically plugged
+// into).  That same MAC then appears in the MAC table of every upstream
+// switch as the frame travels toward the core, but always on an uplink/trunk
+// port.  The topology here is:
+//
+//	laptop → MS355 edge (access port 12, VLAN 100)
+//	       → MS450 distribution (AGGR/0 uplink, ports 49+50)
+//	       → C9300 core (uplink port 25)
 func testDemoResults(mac string) []map[string]interface{} {
 	if mac == "" {
 		mac = "a4:c3:f0:85:1d:3e"
 	}
+	const org = "Acme Corporation"
+	const net = "HQ Campus"
 	const ip = "10.10.1.42"
 	const hostname = "laptop-jsmith.acme.local"
 	const lastSeen = "2026-03-02T14:23:00Z"
 	const mfr = "Apple"
 	const vlan = 100
 	return []map[string]interface{}{
-		// ── HQ Campus — MS355 edge + MS450 distribution (AGGR uplink) ────────
+		// ── Layer 1: edge MS355 — device is physically plugged in here ────────
 		{
-			"orgName":      "Acme Corporation",
-			"networkName":  "HQ Campus",
+			"orgName":      org,
+			"networkName":  net,
 			"deviceName":   "sw-hq-access-ms355",
 			"deviceSerial": "Q2HP-XXXX-0001",
 			"port":         "12",
@@ -984,9 +991,10 @@ func testDemoResults(mac string) []map[string]interface{} {
 			"portMode":     "access",
 			"isUplink":     false,
 		},
+		// ── Layer 2: distribution MS450 — MAC seen on AGGR uplink to core ────
 		{
-			"orgName":      "Acme Corporation",
-			"networkName":  "HQ Campus",
+			"orgName":      org,
+			"networkName":  net,
 			"deviceName":   "sw-hq-dist-ms450",
 			"deviceSerial": "Q2EK-XXXX-0002",
 			"port":         "AGGR/0",
@@ -1000,96 +1008,14 @@ func testDemoResults(mac string) []map[string]interface{} {
 			"portMode":     "trunk",
 			"isUplink":     true,
 		},
-		// ── Warehouse — C9300 access + C9300 stack uplink ─────────────────────
+		// ── Layer 3: C9300 core — MAC seen on uplink port toward router ───────
 		{
-			"orgName":      "Acme Corporation",
-			"networkName":  "Warehouse",
-			"deviceName":   "sw-wh-c9300-01",
+			"orgName":      org,
+			"networkName":  net,
+			"deviceName":   "sw-hq-core-c9300",
 			"deviceSerial": "FCW-XXXX-0003",
-			"port":         "7",
-			"aggrPorts":    nil,
-			"mac":          mac,
-			"ip":           ip,
-			"hostname":     hostname,
-			"lastSeen":     lastSeen,
-			"manufacturer": mfr,
-			"vlan":         vlan,
-			"portMode":     "access",
-			"isUplink":     false,
-		},
-		{
-			"orgName":      "Acme Corporation",
-			"networkName":  "Warehouse",
-			"deviceName":   "sw-wh-c9300-stack",
-			"deviceSerial": "FCW-XXXX-0004",
 			"port":         "25",
 			"aggrPorts":    nil,
-			"mac":          mac,
-			"ip":           ip,
-			"hostname":     hostname,
-			"lastSeen":     lastSeen,
-			"manufacturer": mfr,
-			"vlan":         vlan,
-			"portMode":     "trunk",
-			"isUplink":     true,
-		},
-		// ── City Parks — MS355 access + ISP fiber uplink (port 49) ───────────
-		{
-			"orgName":      "Acme Corporation",
-			"networkName":  "City Parks",
-			"deviceName":   "sw-parks-ms355-01",
-			"deviceSerial": "Q2DY-XXXX-0005",
-			"port":         "5",
-			"aggrPorts":    nil,
-			"mac":          mac,
-			"ip":           ip,
-			"hostname":     hostname,
-			"lastSeen":     lastSeen,
-			"manufacturer": mfr,
-			"vlan":         vlan,
-			"portMode":     "access",
-			"isUplink":     false,
-		},
-		{
-			"orgName":      "Acme Corporation",
-			"networkName":  "City Parks",
-			"deviceName":   "sw-parks-ms355-01",
-			"deviceSerial": "Q2DY-XXXX-0005",
-			"port":         "49",
-			"aggrPorts":    nil,
-			"mac":          mac,
-			"ip":           ip,
-			"hostname":     hostname,
-			"lastSeen":     lastSeen,
-			"manufacturer": mfr,
-			"vlan":         vlan,
-			"portMode":     "trunk",
-			"isUplink":     true,
-		},
-		// ── Remote Office — MS355 access + AGGR uplink ────────────────────────
-		{
-			"orgName":      "Acme Corporation",
-			"networkName":  "Remote Office",
-			"deviceName":   "sw-remote-ms355-01",
-			"deviceSerial": "Q2DY-XXXX-0006",
-			"port":         "3",
-			"aggrPorts":    nil,
-			"mac":          mac,
-			"ip":           ip,
-			"hostname":     hostname,
-			"lastSeen":     lastSeen,
-			"manufacturer": mfr,
-			"vlan":         vlan,
-			"portMode":     "access",
-			"isUplink":     false,
-		},
-		{
-			"orgName":      "Acme Corporation",
-			"networkName":  "Remote Office",
-			"deviceName":   "sw-remote-ms355-01",
-			"deviceSerial": "Q2DY-XXXX-0006",
-			"port":         "AGGR/0",
-			"aggrPorts":    []string{"51", "52"},
 			"mac":          mac,
 			"ip":           ip,
 			"hostname":     hostname,
