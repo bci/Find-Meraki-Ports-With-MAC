@@ -280,8 +280,11 @@ tbody td { padding:8px 12px; vertical-align:middle; }
   font-size:.74rem;
   color:var(--gray-600);
 }
-.row-uplink td { color:var(--gray-400); }
-.row-uplink .mfr-badge { opacity:.5; }
+.aggr-members {
+  font-size:.74rem;
+  opacity:.65;
+  color:var(--gray-500);
+}
 tbody tr { cursor:pointer; }
 .row-selected { background:rgba(245,158,11,.12) !important; outline:1px solid rgba(245,158,11,.45); }
 .row-selected td { color:var(--fg) !important; }
@@ -296,6 +299,11 @@ tbody tr { cursor:pointer; }
 }
 .mode-trunk  { background:var(--gray-200); color:var(--gray-500); }
 .mode-access { background:#dbeafe;         color:#1e40af; }
+.mode-uplink { background:#fef3c7;         color:#92400e; border:1px solid #fcd34d; }
+
+/* Rows confirmed as inter-switch uplinks get a subtle amber tint */
+tr.row-uplink-confirmed td { background:rgba(251,191,36,.07); }
+tr.row-uplink-confirmed .mode-badge { /* badge already styled */ }
 
 .log-console {
   height:200px;

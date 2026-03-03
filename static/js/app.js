@@ -345,7 +345,11 @@ class App {
   }
 
   _cmpIP(a, b) {
-    const parse = ip => ip.split('.').map(n => parseInt(n, 10) || 0);
+    const parse = ip => {
+      const parts = (ip || '').split('.');
+      while (parts.length < 4) parts.push('0');
+      return parts.slice(0, 4).map(n => parseInt(n, 10) || 0);
+    };
     const pa = parse(a), pb = parse(b);
     for (let i = 0; i < 4; i++) {
       if (pa[i] !== pb[i]) return pa[i] - pb[i];
@@ -355,7 +359,7 @@ class App {
 
   _cmpPort(a, b) {
     // Extract first integer sequence (e.g. "Gi1/0/3" → 1, "24" → 24)
-    const num = s => { const m = s.match(/\d+/); return m ? parseInt(m[0], 10) : 0; };
+    const num = s => { const m = (s || '').match(/\d+/); return m ? parseInt(m[0], 10) : 0; };
     return num(a) - num(b);
   }
 
@@ -408,30 +412,49 @@ class App {
     // Re-apply selectedResult after re-render (match by mac+port+serial)
     const prevSel = this.selectedResult;
     this.selectedResult = null;
+    let renderedCount = 0;
 
     sorted.forEach((r, idx) => {
+      // Normalise aggrPorts: Go nil slice → JSON null → ensure it's always array or null
+      if (r.aggrPorts !== null && r.aggrPorts !== undefined && !Array.isArray(r.aggrPorts)) {
+        r.aggrPorts = null;
+      }
       const tr = document.createElement('tr');
-      const isTrunk = r.portMode === 'trunk';
-      if (isTrunk) tr.classList.add('row-uplink');
       let modeCell;
-      if (r.portMode === 'trunk') {
+      if (r.isUplink) {
+        modeCell = '<span class="mode-badge mode-uplink" title="Confirmed inter-switch uplink (link-layer topology)">Uplink</span>';
+      } else if (r.portMode === 'trunk') {
         modeCell = '<span class="mode-badge mode-trunk">Trunk</span>';
       } else if (r.portMode === 'access') {
-        const vlanLabel = r.vlan ? ' ' + r.vlan : '';
+        const vlanLabel = r.vlan != null && r.vlan !== '' ? ' ' + r.vlan : '';
         modeCell = '<span class="mode-badge mode-access">Access' + this._esc(vlanLabel) + '</span>';
       } else {
         modeCell = '—';
       }
-      tr.innerHTML =
-        '<td>' + this._esc(r.deviceName || r.switchName || '—') + '</td>' +
-        '<td>' + this._esc(r.networkName || '—') + '</td>' +
-        '<td class="cell-mono">' + this._esc(r.mac || '—') + '</td>' +
-        '<td class="cell-mono">' + this._esc(r.ip || '—') + '</td>' +
-        '<td>' + this._esc(r.port || r.portId || '—') + '</td>' +
-        '<td>' + this._esc(String(r.vlan || '—')) + '</td>' +
-        '<td>' + this._esc(r.hostname || '—') + '</td>' +
-        '<td>' + (r.manufacturer ? '<span class="mfr-badge">' + this._esc(r.manufacturer) + '</span>' : '—') + '</td>' +
-        '<td>' + modeCell + '</td>';
+      const vlanDisplay = (r.vlan != null && r.vlan !== '') ? String(r.vlan) : '—';
+      try {
+        tr.innerHTML =
+          '<td>' + this._esc(r.deviceName || r.switchName || '—') + '</td>' +
+          '<td>' + this._esc(r.networkName || '—') + '</td>' +
+          '<td class="cell-mono">' + this._esc(r.mac || '—') + '</td>' +
+          '<td class="cell-mono">' + this._esc(r.ip || '—') + '</td>' +
+          '<td>' + (() => {
+            const portLabel = this._esc(r.port || r.portId || '—');
+            if (r.aggrPorts && r.aggrPorts.length) {
+              return portLabel + ' <span class="aggr-members" title="Member ports">(' + this._esc(r.aggrPorts.join(', ')) + ')</span>';
+            }
+            return portLabel;
+          })() + '</td>' +
+          '<td>' + this._esc(vlanDisplay) + '</td>' +
+          '<td>' + this._esc(r.hostname || '—') + '</td>' +
+          '<td>' + (r.manufacturer ? '<span class="mfr-badge">' + this._esc(r.manufacturer) + '</span>' : '—') + '</td>' +
+          '<td>' + modeCell + '</td>';
+      } catch(e) {
+        console.error('Row render error for result:', r, e);
+        tr.innerHTML = '<td colspan="9" style="color:red;background:#fee2e2;padding:6px">⚠ Error rendering row (' + this._esc(r.port || '?') + ' / ' + this._esc(r.mac || '?') + '): ' + this._esc(String(e)) + '</td>';
+      }
+      if (r.isUplink) tr.classList.add('row-uplink-confirmed');
+      renderedCount++;
 
       tr.addEventListener('click', () => {
         tbody.querySelectorAll('tr').forEach(t => t.classList.remove('row-selected'));
@@ -450,25 +473,39 @@ class App {
       tbody.appendChild(tr);
     });
 
-    // Uplink note: show when any result was found on a trunk port
-    const trunkResults = sorted.filter(r => r.portMode === 'trunk');
-    if (trunkResults.length > 0) {
-      const allTrunk = sorted.every(r => r.portMode === 'trunk');
-      const items = trunkResults.map(r =>
+    // Update count to match what was actually rendered
+    count.textContent = renderedCount + ' result' + (renderedCount !== 1 ? 's' : '');
+
+    // Note: confirmed uplinks (from topology) get a specific warning.
+    // Unconfirmed trunk ports get a softer neutral note.
+    const uplinkResults = sorted.filter(r => r.isUplink);
+    const trunkOnlyResults = sorted.filter(r => !r.isUplink && r.portMode === 'trunk' && !(r.port || '').startsWith('AGGR'));
+
+    if (uplinkResults.length > 0) {
+      const items = uplinkResults.map(r =>
         '<li><strong>' + this._esc(r.deviceName || r.switchName || r.deviceSerial || '—') +
         '</strong> — port <code>' + this._esc(r.port || '—') + '</code>' +
-        (r.networkName ? ' <span style="opacity:.6">(' + this._esc(r.networkName) + ')</span>' : '') +
+        (r.networkName ? ' <span style="opacity:.6">('+this._esc(r.networkName)+')</span>' : '') +
         '</li>'
       ).join('');
-      let extra = '';
-      if (allTrunk) {
-        extra = '<p class="uplink-note-extra">All results are on trunk/uplink ports — the device is not directly attached to any of these switches. It may be connected to a different Meraki network; try searching all networks.</p>';
-      }
       noteEl.innerHTML =
-        '<strong>&#9432; Note:</strong> The following switch' + (trunkResults.length > 1 ? 'es' : '') +
-        ' found this MAC address on a trunk/uplink port. The device is likely connected further downstream — ' +
-        'look for a result with an <em>access</em> port for the actual connection point.' +
-        '<ul>' + items + '</ul>' + extra;
+        '<strong>&#9650; Uplink detected:</strong> The following port' + (uplinkResults.length > 1 ? 's are' : ' is') +
+        ' a confirmed inter-switch uplink according to the Meraki link-layer topology.' +
+        ' The MAC address belongs to a device further upstream — this switch is not the access point.' +
+        '<ul>' + items + '</ul>';
+      noteEl.classList.remove('hidden');
+    } else if (trunkOnlyResults.length > 0) {
+      const items = trunkOnlyResults.map(r =>
+        '<li><strong>' + this._esc(r.deviceName || r.switchName || r.deviceSerial || '—') +
+        '</strong> — port <code>' + this._esc(r.port || '—') + '</code>' +
+        (r.networkName ? ' <span style="opacity:.6">('+this._esc(r.networkName)+')</span>' : '') +
+        '</li>'
+      ).join('');
+      noteEl.innerHTML =
+        '<strong>&#9432; Note:</strong> The following switch' + (trunkOnlyResults.length > 1 ? 'es' : '') +
+        ' found this MAC on a <em>trunk</em> port (carries multiple VLANs). ' +
+        'This may be an uplink, a multi-VLAN device (phone, AP, server), or a misconfigured port.' +
+        '<ul>' + items + '</ul>';
       noteEl.classList.remove('hidden');
     }
   }
@@ -476,15 +513,17 @@ class App {
   // ── Export ────────────────────────────────────────────────
 
   _exportCSV() {
-    const header = ['Device','Network','MAC','IP','Port','VLAN','Hostname','Manufacturer','Mode'];
+    const header = ['Device','Network','MAC','IP','Port','AggrPorts','VLAN','Hostname','Manufacturer','Mode','Uplink'];
     const rows = this.results.map(r => [
       r.deviceName || r.switchName || '',
       r.networkName || '',
       r.mac || '', r.ip || '',
       r.port || r.portId || '',
+      (r.aggrPorts && r.aggrPorts.length) ? r.aggrPorts.join(', ') : '',
       r.vlan || '', r.hostname || '',
       r.manufacturer || '',
-      r.portMode || ''
+      r.portMode || '',
+      r.isUplink ? 'yes' : ''
     ].map(v => '"' + String(v).replace(/"/g, '""') + '"').join(','));
     this._download('meraki-results.csv', [header.join(','), ...rows].join('\r\n'), 'text/csv');
   }

@@ -185,3 +185,54 @@ func TestResolveHostname(t *testing.T) {
 		t.Logf("ResolveHostname(\"127.0.0.1\") returned error: %v", err)
 	}
 }
+
+func TestParseAggrPort(t *testing.T) {
+	tests := []struct {
+		name       string
+		raw        string
+		wantClean  string
+		wantMember []string
+	}{
+		{
+			name:       "plain port unchanged",
+			raw:        "42",
+			wantClean:  "42",
+			wantMember: nil,
+		},
+		{
+			name:       "AGGR without member list",
+			raw:        "AGGR/1",
+			wantClean:  "AGGR/1",
+			wantMember: nil,
+		},
+		{
+			name:       "AGGR with embedded member list",
+			raw:        "AGGR/0=98:18:88:63:BA:37/49,98:18:88:63:BA:37/50,98:18:88:63:BA:37/52",
+			wantClean:  "AGGR/0",
+			wantMember: []string{"49", "50", "52"},
+		},
+		{
+			name:       "AGGR single member",
+			raw:        "AGGR/2=Q2HP-ABCD/23",
+			wantClean:  "AGGR/2",
+			wantMember: []string{"23"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			clean, members := parseAggrPort(tc.raw)
+			if clean != tc.wantClean {
+				t.Errorf("parseAggrPort(%q) clean = %q, want %q", tc.raw, clean, tc.wantClean)
+			}
+			if len(members) != len(tc.wantMember) {
+				t.Errorf("parseAggrPort(%q) members = %v, want %v", tc.raw, members, tc.wantMember)
+				return
+			}
+			for i := range members {
+				if members[i] != tc.wantMember[i] {
+					t.Errorf("parseAggrPort(%q) members[%d] = %q, want %q", tc.raw, i, members[i], tc.wantMember[i])
+				}
+			}
+		})
+	}
+}

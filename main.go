@@ -231,7 +231,7 @@ func main() {
 		if err != nil {
 			exitWithError(log, err.Error())
 		}
-		fmt.Fprintf(os.Stdout, "API OK: %d organizations found\n", len(orgs))
+		_, _ = fmt.Fprintf(os.Stdout, "API OK: %d organizations found\n", len(orgs))
 		return
 	}
 
@@ -282,7 +282,7 @@ func main() {
 
 	if cfg.IPAddress == "" && strings.TrimSpace(*macFlag) == "" {
 		if !cfg.TestFull {
-			exitWithError(log, "--ip or --mac is required")
+			exitWithError(log, "--ip or --mac is required (or use --interactive to launch the web interface)")
 		}
 	}
 
@@ -358,6 +358,7 @@ func main() {
 
 	var results []output.ResultRow
 	resultsIndex := make(map[string]struct{})
+	var cliAggrCache map[string]map[string][]string
 	for _, net := range selectedNetworks {
 		log.Debugf("Network: %s", net.Name)
 
@@ -376,6 +377,18 @@ func main() {
 		// Filter to switches only
 		switches := filters.FilterSwitches(devices)
 		switches = filters.FilterSwitchesByName(switches, cfg.SwitchFilter)
+
+		// Fetch topology to identify true uplink ports; failure is non-fatal.
+		// Pre-populate AGGR cache from network-level link aggregations API (reliable source for AGGR/N membership).
+		cliAggrCache = client.GetNetworkLinkAggregations(ctx, net.ID)
+		// Build uplink set using LLDP/CDP per switch (topology API lacks port IDs on this firmware).
+		cliUplinkPortCache := make(map[string]map[string]struct{})
+		cliGetUplinkPorts := func(serial string) map[string]struct{} {
+			if _, ok := cliUplinkPortCache[serial]; !ok {
+				cliUplinkPortCache[serial] = client.GetDeviceUplinkPorts(ctx, serial)
+			}
+			return cliUplinkPortCache[serial]
+		}
 
 		// Query network-level clients
 		networkClients, err := client.GetNetworkClients(ctx, net.ID)
@@ -469,18 +482,21 @@ func main() {
 				vlan, portMode := enrichPortInfo(ctx, client, serial, port, 0, "")
 
 				ip, hn := ipAndHostname(normMAC, c.IP, serial)
+				aggrMembers := resolveAggrPorts(ctx, client, serial, port, cliAggrCache)
 				addResult(resultsIndex, &results, output.ResultRow{
 					OrgName:      org.Name,
 					NetworkName:  net.Name,
 					SwitchName:   switchName,
 					SwitchSerial: serial,
 					Port:         port,
+					AggrPorts:    aggrMembers,
 					MAC:          macaddr.FormatMacColon(normMAC),
 					IP:           ip,
 					Hostname:     hn,
 					LastSeen:     firstNonEmpty(c.LastSeen, macToLastSeen[normMAC]),
 					VLAN:         vlan,
 					PortMode:     portMode,
+					IsUplink:     isPortUplink(port, aggrMembers, cliGetUplinkPorts(serial)),
 				})
 			}
 		}
@@ -549,7 +565,9 @@ func main() {
 								log.Debugf("MAC entry fields: %+v", entry)
 							}
 
-							port := firstNonEmpty(portID, "unknown")
+							// Normalize AGGR raw strings (e.g. "AGGR/0=serial/49,...") to clean ID
+							cleanPortID, aggrMembers := parseAggrPort(firstNonEmpty(portID, "unknown"))
+							port := cleanPortID
 							if !filters.MatchesPortFilter(port, cfg.PortFilter) {
 								continue
 							}
@@ -562,19 +580,26 @@ func main() {
 									macaddr.FormatMacColon(normMAC), firstNonEmpty(dev.Name, dev.Serial), port, richVLAN, richMode)
 							}
 
+							// If not already parsed from the raw string, try API/cache lookup
+							if aggrMembers == nil {
+								aggrMembers = resolveAggrPorts(ctx, client, dev.Serial, port, cliAggrCache)
+							}
 							ip, hn := ipAndHostname(normMAC, "", dev.Serial)
+							_, isUplink := cliGetUplinkPorts(dev.Serial)[port]
 							addResult(resultsIndex, &results, output.ResultRow{
 								OrgName:      org.Name,
 								NetworkName:  net.Name,
 								SwitchName:   firstNonEmpty(dev.Name, dev.Serial),
 								SwitchSerial: dev.Serial,
 								Port:         port,
+								AggrPorts:    aggrMembers,
 								MAC:          macaddr.FormatMacColon(normMAC),
 								IP:           ip,
 								Hostname:     hn,
 								LastSeen:     macToLastSeen[normMAC],
 								VLAN:         richVLAN,
 								PortMode:     richMode,
+								IsUplink:     isUplink,
 							})
 							foundInTable = true
 						}
@@ -611,18 +636,21 @@ func main() {
 					}
 					vlan, portMode := enrichPortInfo(ctx, client, dev.Serial, port, 0, "")
 					ip, hn := ipAndHostname(normMAC, "", dev.Serial)
+					aggrMembers2 := resolveAggrPorts(ctx, client, dev.Serial, port, cliAggrCache)
 					addResult(resultsIndex, &results, output.ResultRow{
 						OrgName:      org.Name,
 						NetworkName:  net.Name,
 						SwitchName:   firstNonEmpty(dev.Name, dev.Serial),
 						SwitchSerial: dev.Serial,
 						Port:         port,
+						AggrPorts:    aggrMembers2,
 						MAC:          macaddr.FormatMacColon(normMAC),
 						IP:           ip,
 						Hostname:     hn,
 						LastSeen:     c.LastSeen,
 						VLAN:         vlan,
 						PortMode:     portMode,
+						IsUplink:     isPortUplink(port, aggrMembers2, cliGetUplinkPorts(dev.Serial)),
 					})
 				}
 			}
@@ -679,6 +707,7 @@ func startWebServer(cfg Config, host, port string) {
 	r.HandleFunc("/api/topology", handleGetTopology).Methods("GET")
 	r.HandleFunc("/api/alerts", handleGetAlerts).Methods("GET")
 	r.HandleFunc("/api/logs", handleLogs).Methods("GET")
+	r.HandleFunc("/api/debug/network", handleDebugNetwork).Methods("GET")
 
 	// WebSocket for real-time updates
 	r.HandleFunc("/ws/logs", handleWebSocketLogs)
@@ -1009,6 +1038,7 @@ func handleResolve(w http.ResponseWriter, r *http.Request) {
 			"deviceName":   result.SwitchName,
 			"deviceSerial": result.SwitchSerial,
 			"port":         result.Port,
+			"aggrPorts":    result.AggrPorts,
 			"mac":          result.MAC,
 			"ip":           result.IP,
 			"hostname":     result.Hostname,
@@ -1016,6 +1046,7 @@ func handleResolve(w http.ResponseWriter, r *http.Request) {
 			"manufacturer": getManufacturer(result.MAC),
 			"vlan":         result.VLAN,
 			"portMode":     result.PortMode,
+			"isUplink":     result.IsUplink,
 		}
 	}
 
@@ -1416,6 +1447,85 @@ func handleLogs(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"logs": []}`))
 }
 
+// handleDebugNetwork dumps raw Meraki API responses for a network to aid in diagnosing
+// topology and AGGR port resolution issues.
+// Query params: networkId (required), orgId, apiKey
+// Returns: raw topology JSON, network link aggregations, per-switch LLDP uplinks and port list.
+func handleDebugNetwork(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	q := r.URL.Query()
+	networkID := q.Get("networkId")
+	orgID := q.Get("orgId")
+	apiKey := q.Get("apiKey")
+	if apiKey == "" {
+		apiKey = webAPIKey
+	}
+	if networkID == "" {
+		http.Error(w, `{"error":"networkId required"}`, http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	client := meraki.NewClient(apiKey, "", 2)
+
+	out := map[string]interface{}{
+		"networkId": networkID,
+		"orgId":     orgID,
+	}
+
+	// 1. Raw topology (shows device-level links but no port IDs on this firmware)
+	topoRaw, topoErr := client.GetNetworkTopologyRaw(ctx, networkID)
+	if topoErr != nil {
+		out["topologyError"] = topoErr.Error()
+	} else {
+		var topoParsed interface{}
+		_ = json.Unmarshal(topoRaw, &topoParsed)
+		out["topology"] = topoParsed
+	}
+
+	// 2. Network-level link aggregations (correct AGGR member source)
+	netLAGs := client.GetNetworkLinkAggregations(ctx, networkID)
+	out["networkLinkAggregations"] = netLAGs
+
+	// 3. Per-switch: LLDP/CDP uplinks + raw port list
+	devices, devErr := client.GetDevices(ctx, networkID)
+	if devErr != nil {
+		out["devicesError"] = devErr.Error()
+	} else {
+		switchData := []map[string]interface{}{}
+		for _, dev := range filters.FilterSwitches(devices) {
+			entry := map[string]interface{}{
+				"serial": dev.Serial,
+				"name":   firstNonEmpty(dev.Name, dev.Serial),
+				"model":  dev.Model,
+			}
+			// LLDP/CDP uplink ports
+			uplinkSet := client.GetDeviceUplinkPorts(ctx, dev.Serial)
+			uplinkList := make([]string, 0, len(uplinkSet))
+			for p := range uplinkSet {
+				uplinkList = append(uplinkList, p)
+			}
+			sort.Strings(uplinkList)
+			entry["lldpUplinkPorts"] = uplinkList
+
+			// Raw switch port list (for reference)
+			portsRaw, pErr := client.GetSwitchPortsRaw(ctx, dev.Serial)
+			if pErr != nil {
+				entry["switchPortsError"] = pErr.Error()
+			} else {
+				var portsParsed interface{}
+				_ = json.Unmarshal(portsRaw, &portsParsed)
+				entry["switchPorts"] = portsParsed
+			}
+			switchData = append(switchData, entry)
+		}
+		out["switches"] = switchData
+	}
+
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(out)
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
@@ -1425,7 +1535,7 @@ func handleWebSocketLogs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	ch := wsLogHub.subscribe()
 	defer wsLogHub.unsubscribe(ch)
@@ -1453,6 +1563,10 @@ func enrichPortInfo(ctx context.Context, client *meraki.MerakiClient, serial, po
 	if serial == "" || portID == "" || portID == "unknown" {
 		return
 	}
+	// AGGR ports are link-aggregation virtual ports — no individual switch port API entry exists for them.
+	if strings.HasPrefix(portID, "AGGR") {
+		return
+	}
 	sp, err := client.GetSwitchPort(ctx, serial, portID)
 	if err != nil {
 		return
@@ -1464,6 +1578,84 @@ func enrichPortInfo(ctx context.Context, client *meraki.MerakiClient, serial, po
 		vlan = sp.Vlan
 	}
 	return
+}
+
+// parseAggrPort splits a raw Meraki AGGR port string into a clean port ID and member port list.
+//
+// Meraki MAC table entries encode link-aggregation ports as a compound string:
+//
+//	"AGGR/0=<serial>/<port>,<serial>/<port>,..."
+//
+// This function returns:
+//   - cleanID: just "AGGR/0" (the part before the first '='), unchanged if no '='
+//   - members: port numbers extracted from each "<serial>/<port>" segment (e.g. ["49","50","52"])
+//
+// If the string does not start with "AGGR" it is returned unchanged with nil members.
+func parseAggrPort(raw string) (cleanID string, members []string) {
+	if !strings.HasPrefix(raw, "AGGR") {
+		return raw, nil
+	}
+	eqIdx := strings.IndexByte(raw, '=')
+	if eqIdx < 0 {
+		// No embedded member list — return as-is
+		return raw, nil
+	}
+	cleanID = raw[:eqIdx]
+	rest := raw[eqIdx+1:]
+	for _, seg := range strings.Split(rest, ",") {
+		seg = strings.TrimSpace(seg)
+		if seg == "" {
+			continue
+		}
+		// Each segment is "<serial>/<portID>" — take the part after the last '/'
+		if slashIdx := strings.LastIndexByte(seg, '/'); slashIdx >= 0 {
+			if p := seg[slashIdx+1:]; p != "" {
+				members = append(members, p)
+			}
+		}
+	}
+	if len(members) == 0 {
+		members = nil
+	}
+	return cleanID, members
+}
+
+// resolveAggrPorts returns the physical member port IDs for an aggregation port (e.g. "AGGR/1").
+// It first tries to parse member ports embedded in the raw port string (MAC table format), then
+// falls back to querying the switch port list API via the provided cache.
+// Returns nil if the port is not an AGGR port or members cannot be resolved.
+func resolveAggrPorts(ctx context.Context, client *meraki.MerakiClient, serial, portID string, cache map[string]map[string][]string) []string {
+	if !strings.HasPrefix(portID, "AGGR") {
+		return nil
+	}
+	// If the portID contains embedded member info (raw MAC table format), parse it directly.
+	if _, members := parseAggrPort(portID); members != nil {
+		return members
+	}
+	// Otherwise fall back to the switch port list API.
+	if _, ok := cache[serial]; !ok {
+		cache[serial] = client.GetSwitchPortMembers(ctx, serial)
+	}
+	members := cache[serial][portID]
+	if len(members) == 0 {
+		return nil
+	}
+	return members
+}
+
+// isPortUplink returns true if portID is a confirmed uplink port for the given serial.
+// For AGGR ports, it checks whether any member port is in the uplink set.
+func isPortUplink(portID string, aggrMembers []string, uplinkSet map[string]struct{}) bool {
+	if _, ok := uplinkSet[portID]; ok {
+		return true
+	}
+	// For AGGR ports, check if any member port is an uplink.
+	for _, m := range aggrMembers {
+		if _, ok := uplinkSet[m]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveDevices(cfg Config, macAddr, ipAddr string) ([]output.ResultRow, error) {
@@ -1640,6 +1832,24 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 		deviceBySerial[dev.Serial] = dev
 	}
 
+	// AGGR member cache: serial → (aggrPortID → []memberPortIDs)
+	// Pre-populate from the network-level link aggregations API, which is the only
+	// reliable source when MAC table entries use the clean "AGGR/0" format (no embedded ports).
+	// The per-device /switch/ports API does not expose linkAggregationId on this hardware.
+	aggrCache := client.GetNetworkLinkAggregations(ctx, network.ID)
+
+	// Build uplink port set using LLDP/CDP data per switch.
+	// Ports where the neighbor has a Meraki dashboard URL are confirmed inter-device uplinks.
+	// The topology/linkLayer API does not include port IDs on this firmware, so LLDP/CDP is used instead.
+	// Results are cached per serial since we query each switch once.
+	uplinkPortCache := make(map[string]map[string]struct{}) // serial → set of uplink portIDs
+	getUplinkPorts := func(serial string) map[string]struct{} {
+		if _, ok := uplinkPortCache[serial]; !ok {
+			uplinkPortCache[serial] = client.GetDeviceUplinkPorts(ctx, serial)
+		}
+		return uplinkPortCache[serial]
+	}
+
 	// Process network clients
 	for _, c := range networkClients {
 		normMAC, err := macaddr.NormalizeExactMac(c.MAC)
@@ -1659,18 +1869,21 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 			vlan, portMode := enrichPortInfo(ctx, client, serial, port, 0, "")
 			ip, hn := resolveIP(normMAC, c.IP, serial)
 
+			aggrMembers := resolveAggrPorts(ctx, client, serial, port, aggrCache)
 			addResult(resultsIndex, &results, output.ResultRow{
 				OrgName:      org.Name,
 				NetworkName:  network.Name,
 				SwitchName:   switchName,
 				SwitchSerial: serial,
 				Port:         port,
+				AggrPorts:    aggrMembers,
 				MAC:          macaddr.FormatMacColon(normMAC),
 				IP:           ip,
 				Hostname:     hn,
 				LastSeen:     firstNonEmpty(c.LastSeen, macToLastSeenWeb[normMAC]),
 				VLAN:         vlan,
 				PortMode:     portMode,
+				IsUplink:     isPortUplink(port, aggrMembers, getUplinkPorts(serial)),
 			})
 		}
 	}
@@ -1724,20 +1937,27 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 					}
 					vlan, _ := entry["vlan"].(float64)
 					portMode, _ := entry["type"].(string)
-					richVLAN, richMode := enrichPortInfo(ctx, client, dev.Serial, portID, int(vlan), portMode)
+					// Normalize AGGR raw strings (e.g. "AGGR/0=serial/49,...") to clean ID + member list
+					cleanPortID, aggrMembers := parseAggrPort(firstNonEmpty(portID, "unknown"))
+					if aggrMembers == nil {
+						aggrMembers = resolveAggrPorts(ctx, client, dev.Serial, cleanPortID, aggrCache)
+					}
+					richVLAN, richMode := enrichPortInfo(ctx, client, dev.Serial, cleanPortID, int(vlan), portMode)
 					ip, hn := resolveIP(normMAC, "", dev.Serial)
 					addResult(resultsIndex, &results, output.ResultRow{
 						OrgName:      org.Name,
 						NetworkName:  network.Name,
 						SwitchName:   firstNonEmpty(dev.Name, dev.Serial),
 						SwitchSerial: dev.Serial,
-						Port:         firstNonEmpty(portID, "unknown"),
+						Port:         cleanPortID,
+						AggrPorts:    aggrMembers,
 						MAC:          macaddr.FormatMacColon(normMAC),
 						IP:           ip,
 						Hostname:     hn,
 						LastSeen:     macToLastSeenWeb[normMAC],
 						VLAN:         richVLAN,
 						PortMode:     richMode,
+						IsUplink:     isPortUplink(cleanPortID, aggrMembers, getUplinkPorts(dev.Serial)),
 					})
 					foundInTable = true
 				}
@@ -1766,18 +1986,21 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 			port := firstNonEmpty(c.SwitchportName, c.Switchport, c.Port, "unknown")
 			vlan, portMode := enrichPortInfo(ctx, client, dev.Serial, port, 0, "")
 			ip, hn := resolveIP(normMAC, "", dev.Serial)
+			aggrMembers3 := resolveAggrPorts(ctx, client, dev.Serial, port, aggrCache)
 			addResult(resultsIndex, &results, output.ResultRow{
 				OrgName:      org.Name,
 				NetworkName:  network.Name,
 				SwitchName:   firstNonEmpty(dev.Name, dev.Serial),
 				SwitchSerial: dev.Serial,
 				Port:         port,
+				AggrPorts:    aggrMembers3,
 				MAC:          macaddr.FormatMacColon(normMAC),
 				IP:           ip,
 				Hostname:     hn,
 				LastSeen:     c.LastSeen,
 				VLAN:         vlan,
 				PortMode:     portMode,
+				IsUplink:     isPortUplink(port, aggrMembers3, getUplinkPorts(dev.Serial)),
 			})
 		}
 	}
@@ -1813,7 +2036,7 @@ func lookupOUI(mac string) string {
 		ouiCache.Store(oui, "")
 		return ""
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		ouiCache.Store(oui, "")
 		return ""
@@ -1923,85 +2146,85 @@ func addResult(index map[string]struct{}, rows *[]output.ResultRow, row output.R
 // printUsage writes comprehensive help text to the specified file.
 // Includes all command-line flags, environment variables, and usage examples.
 func printUsage(w *os.File) {
-	fmt.Fprintln(w, "Find-Meraki-Ports-With-MAC - Meraki MAC lookup")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Usage:")
-	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --mac 00:11:22:33:44:55 --network ALL --org \"My Org\" --output-format csv")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Flags:")
-	fmt.Fprintln(w, "  --ip <address>              IP address to resolve to MAC (mutually exclusive with --mac)")
-	fmt.Fprintln(w, "  --mac <mac|pattern>         MAC address or wildcard pattern (required unless using list/test flags)")
-	fmt.Fprintln(w, "  --network <name|ALL>        Network name or ALL (default from .env)")
-	fmt.Fprintln(w, "  --org <name>                Organization name (optional if only one org accessible)")
-	fmt.Fprintln(w, "  --output-format <csv|text|html>  Output format (default from .env)")
-	fmt.Fprintln(w, "  --list-orgs                 List organizations and exit")
-	fmt.Fprintln(w, "  --list-networks             List networks per organization and exit")
-	fmt.Fprintln(w, "  --test-api                  Validate API key and exit")
-	fmt.Fprintln(w, "  --test-full-table           Display all MACs in forwarding table (filters apply)")
-	fmt.Fprintln(w, "  --switch <name>             Filter by switch name (case-insensitive substring)")
-	fmt.Fprintln(w, "  --port <number>             Filter by port name/number")
-	fmt.Fprintln(w, "  --verbose                   Send DEBUG logs to console (overrides --log-level and --log-file)")
-	fmt.Fprintln(w, "  --log-file <filename>        Log file path (default from .env)")
-	fmt.Fprintln(w, "  --log-level <DEBUG|INFO|WARNING|ERROR>  Log level (default from .env)")
-	fmt.Fprintln(w, "  --retry <n>                 Max API retry attempts on rate limit (default: 6)")
-	fmt.Fprintln(w, "  --mac-table-poll <n>        MAC table lookup poll attempts, 2s each (default: 15)")
-	fmt.Fprintln(w, "  --dns-servers <addr,...>    Comma-separated DNS servers for PTR lookups")
-	fmt.Fprintln(w, "  --interactive               Launch interactive web interface")
-	fmt.Fprintln(w, "  --web-port <port>           Web server port (default: 8080)")
-	fmt.Fprintln(w, "  --web-host <host>           Web server host (default: localhost)")
-	fmt.Fprintln(w, "  --version                   Show version and exit")
-	fmt.Fprintln(w, "  --help                      Show this help")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Environment:")
-	fmt.Fprintln(w, "  MERAKI_API_KEY     Meraki Dashboard API key (required)")
-	fmt.Fprintln(w, "  MERAKI_ORG         Default org name")
-	fmt.Fprintln(w, "  MERAKI_NETWORK     Default network name or ALL")
-	fmt.Fprintln(w, "  OUTPUT_FORMAT      csv | text | html")
-	fmt.Fprintln(w, "  MERAKI_BASE_URL    API base URL (default https://api.meraki.com/api/v1)")
-	fmt.Fprintln(w, "  MERAKI_RETRIES     Max API retry attempts on rate limit (default 6)")
-	fmt.Fprintln(w, "  MERAKI_MAC_POLL    MAC table lookup poll attempts, 2s each (default 15)")
-	fmt.Fprintln(w, "  DNS_SERVERS        Comma-separated DNS servers for PTR lookups")
-	fmt.Fprintln(w, "  LOG_FILE           Log file path (default Find-Meraki-Ports-With-MAC.log)")
-	fmt.Fprintln(w, "  LOG_LEVEL          DEBUG | INFO | WARNING | ERROR")
-	fmt.Fprintln(w, "")
-	fmt.Fprintln(w, "Examples:")
-	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --ip 192.168.1.100 --network ALL")
-	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --mac 00:11:22:33:44:55 --network ALL")
-	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --mac 08:f1:b3:6f:9c:* --output-format text")
-	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --test-full-table --network City --switch ccc9300xa")
-	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --test-full-table --network City --switch ccc9300xa --port 3")
-	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --list-orgs")
-	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --list-networks --org \"My Org\"")
-	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --test-api")
-	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --interactive")
-	fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --interactive --web-port 9090")
+	_, _ = fmt.Fprintln(w, "Find-Meraki-Ports-With-MAC - Meraki MAC lookup")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Usage:")
+	_, _ = fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --mac 00:11:22:33:44:55 --network ALL --org \"My Org\" --output-format csv")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Flags:")
+	_, _ = fmt.Fprintln(w, "  --ip <address>              IP address to resolve to MAC (mutually exclusive with --mac)")
+	_, _ = fmt.Fprintln(w, "  --mac <mac|pattern>         MAC address or wildcard pattern (required unless using list/test flags)")
+	_, _ = fmt.Fprintln(w, "  --network <name|ALL>        Network name or ALL (default from .env)")
+	_, _ = fmt.Fprintln(w, "  --org <name>                Organization name (optional if only one org accessible)")
+	_, _ = fmt.Fprintln(w, "  --output-format <csv|text|html>  Output format (default from .env)")
+	_, _ = fmt.Fprintln(w, "  --list-orgs                 List organizations and exit")
+	_, _ = fmt.Fprintln(w, "  --list-networks             List networks per organization and exit")
+	_, _ = fmt.Fprintln(w, "  --test-api                  Validate API key and exit")
+	_, _ = fmt.Fprintln(w, "  --test-full-table           Display all MACs in forwarding table (filters apply)")
+	_, _ = fmt.Fprintln(w, "  --switch <name>             Filter by switch name (case-insensitive substring)")
+	_, _ = fmt.Fprintln(w, "  --port <number>             Filter by port name/number")
+	_, _ = fmt.Fprintln(w, "  --verbose                   Send DEBUG logs to console (overrides --log-level and --log-file)")
+	_, _ = fmt.Fprintln(w, "  --log-file <filename>        Log file path (default from .env)")
+	_, _ = fmt.Fprintln(w, "  --log-level <DEBUG|INFO|WARNING|ERROR>  Log level (default from .env)")
+	_, _ = fmt.Fprintln(w, "  --retry <n>                 Max API retry attempts on rate limit (default: 6)")
+	_, _ = fmt.Fprintln(w, "  --mac-table-poll <n>        MAC table lookup poll attempts, 2s each (default: 15)")
+	_, _ = fmt.Fprintln(w, "  --dns-servers <addr,...>    Comma-separated DNS servers for PTR lookups")
+	_, _ = fmt.Fprintln(w, "  --interactive               Launch interactive web interface")
+	_, _ = fmt.Fprintln(w, "  --web-port <port>           Web server port (default: 8080)")
+	_, _ = fmt.Fprintln(w, "  --web-host <host>           Web server host (default: localhost)")
+	_, _ = fmt.Fprintln(w, "  --version                   Show version and exit")
+	_, _ = fmt.Fprintln(w, "  --help                      Show this help")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Environment:")
+	_, _ = fmt.Fprintln(w, "  MERAKI_API_KEY     Meraki Dashboard API key (required)")
+	_, _ = fmt.Fprintln(w, "  MERAKI_ORG         Default org name")
+	_, _ = fmt.Fprintln(w, "  MERAKI_NETWORK     Default network name or ALL")
+	_, _ = fmt.Fprintln(w, "  OUTPUT_FORMAT      csv | text | html")
+	_, _ = fmt.Fprintln(w, "  MERAKI_BASE_URL    API base URL (default https://api.meraki.com/api/v1)")
+	_, _ = fmt.Fprintln(w, "  MERAKI_RETRIES     Max API retry attempts on rate limit (default 6)")
+	_, _ = fmt.Fprintln(w, "  MERAKI_MAC_POLL    MAC table lookup poll attempts, 2s each (default 15)")
+	_, _ = fmt.Fprintln(w, "  DNS_SERVERS        Comma-separated DNS servers for PTR lookups")
+	_, _ = fmt.Fprintln(w, "  LOG_FILE           Log file path (default Find-Meraki-Ports-With-MAC.log)")
+	_, _ = fmt.Fprintln(w, "  LOG_LEVEL          DEBUG | INFO | WARNING | ERROR")
+	_, _ = fmt.Fprintln(w, "")
+	_, _ = fmt.Fprintln(w, "Examples:")
+	_, _ = fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --ip 192.168.1.100 --network ALL")
+	_, _ = fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --mac 00:11:22:33:44:55 --network ALL")
+	_, _ = fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --mac 08:f1:b3:6f:9c:* --output-format text")
+	_, _ = fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --test-full-table --network City --switch ccc9300xa")
+	_, _ = fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --test-full-table --network City --switch ccc9300xa --port 3")
+	_, _ = fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --list-orgs")
+	_, _ = fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --list-networks --org \"My Org\"")
+	_, _ = fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --test-api")
+	_, _ = fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --interactive")
+	_, _ = fmt.Fprintln(w, "  Find-Meraki-Ports-With-MAC.exe --interactive --web-port 9090")
 }
 
 // writeOrganizations writes a formatted list of organizations to the specified file.
 func writeOrganizations(w *os.File, orgs []meraki.Organization) {
-	fmt.Fprintln(w, "Organizations:")
+	_, _ = fmt.Fprintln(w, "Organizations:")
 	for _, org := range orgs {
-		fmt.Fprintf(w, "- %s (%s)\n", org.Name, org.ID)
+		_, _ = fmt.Fprintf(w, "- %s (%s)\n", org.Name, org.ID)
 	}
 }
 
 // writeNetworksForOrg writes a formatted list of networks for an organization to the specified file.
 func writeNetworksForOrg(w *os.File, org meraki.Organization, networks []meraki.Network) {
-	fmt.Fprintf(w, "Organization: %s (%s)\n", org.Name, org.ID)
+	_, _ = fmt.Fprintf(w, "Organization: %s (%s)\n", org.Name, org.ID)
 	if len(networks) == 0 {
-		fmt.Fprintln(w, "  (no networks)")
+		_, _ = fmt.Fprintln(w, "  (no networks)")
 		return
 	}
 	for _, n := range networks {
-		fmt.Fprintf(w, "  - %s (%s)\n", n.Name, n.ID)
+		_, _ = fmt.Fprintf(w, "  - %s (%s)\n", n.Name, n.ID)
 	}
 }
 
 // printVersion writes version and build information to the specified file.
 func printVersion(w *os.File) {
-	fmt.Fprintf(w, "Find-Meraki-Ports-With-MAC version %s\n", Version)
-	fmt.Fprintf(w, "  Commit:     %s\n", Commit)
-	fmt.Fprintf(w, "  Build Time: %s\n", BuildTime)
-	fmt.Fprintf(w, "  Go Version: %s\n", GoVersion)
-	fmt.Fprintf(w, "  Repository: %s\n", RepositoryURL)
+	_, _ = fmt.Fprintf(w, "Find-Meraki-Ports-With-MAC version %s\n", Version)
+	_, _ = fmt.Fprintf(w, "  Commit:     %s\n", Commit)
+	_, _ = fmt.Fprintf(w, "  Build Time: %s\n", BuildTime)
+	_, _ = fmt.Fprintf(w, "  Go Version: %s\n", GoVersion)
+	_, _ = fmt.Fprintf(w, "  Repository: %s\n", RepositoryURL)
 }

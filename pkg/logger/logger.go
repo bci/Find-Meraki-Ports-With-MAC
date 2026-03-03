@@ -69,12 +69,12 @@ func NewWriter(w io.Writer, level LogLevel) *Logger {
 }
 
 func (l *Logger) logf(level LogLevel, label string, format string, args ...interface{}) {
-	if l == nil || !(level >= l.level) {
+	if l == nil || level < l.level {
 		return
 	}
 	timestamp := time.Now().Format(time.RFC3339)
 	msg := fmt.Sprintf(format, args...)
-	fmt.Fprintf(l.writer, "%s [%s] %s\n", timestamp, label, msg)
+	_, _ = fmt.Fprintf(l.writer, "%s [%s] %s\n", timestamp, label, msg)
 }
 
 // Debugf logs a debug message with formatting.

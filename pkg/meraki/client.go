@@ -12,6 +12,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -563,7 +565,7 @@ func isUUIDLike(s string) bool {
 			if c != '-' {
 				return false
 			}
-		} else if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+		} else if (c < '0' || c > '9') && (c < 'a' || c > 'f') && (c < 'A' || c > 'F') {
 			return false
 		}
 	}
@@ -612,6 +614,53 @@ func (m *MerakiClient) GetSwitchPort(ctx context.Context, serial, portID string)
 	return &sp, nil
 }
 
+// SwitchPortFull holds the full port detail needed to resolve link-aggregation membership.
+type SwitchPortFull struct {
+	PortID            string `json:"portId"`
+	LinkAggregationID string `json:"linkAggregationId"` // e.g. "AGGR/1" when port is a LAG member
+}
+
+// GetSwitchPortMembers returns a map of aggregation-port-ID → sorted list of member port IDs
+// for the given switch, e.g. {"AGGR/1": ["1","2"], "AGGR/2": ["3","4"]}.
+// Returns an empty map (never nil) on error so callers can safely do a lookup.
+func (m *MerakiClient) GetSwitchPortMembers(ctx context.Context, serial string) map[string][]string {
+	path := fmt.Sprintf("/devices/%s/switch/ports", serial)
+	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
+	if err != nil {
+		return map[string][]string{}
+	}
+	// Unmarshal as raw maps so we can inspect all fields for debugging
+	var rawPorts []map[string]interface{}
+	if err := json.Unmarshal(body, &rawPorts); err != nil {
+		return map[string][]string{}
+	}
+	aggr := make(map[string][]string)
+	for _, rp := range rawPorts {
+		portID, _ := rp["portId"].(string)
+		lagID, _ := rp["linkAggregationId"].(string)
+		if lagID == "" {
+			// Also try alternate field names Meraki might use
+			lagID, _ = rp["lagId"].(string)
+		}
+		if lagID == "" || portID == "" {
+			continue
+		}
+		aggr[lagID] = append(aggr[lagID], portID)
+	}
+	// Sort member port lists for stable output
+	for k := range aggr {
+		sort.Slice(aggr[k], func(i, j int) bool {
+			ai, ei := strconv.Atoi(aggr[k][i])
+			aj, ej := strconv.Atoi(aggr[k][j])
+			if ei == nil && ej == nil {
+				return ai < aj
+			}
+			return aggr[k][i] < aggr[k][j]
+		})
+	}
+	return aggr
+}
+
 // TopologyNode represents a device node in the network link-layer topology.
 type TopologyNode struct {
 	MAC         string `json:"mac"`
@@ -625,12 +674,44 @@ type TopologyNode struct {
 type TopologyEnd struct {
 	Device TopologyNode `json:"device"`
 	IpAddr string       `json:"ipAddr"`
+	PortId string       `json:"portId"` // switch port ID on this side of the link
 }
 
 // TopologyLink represents a connection between two devices.
 type TopologyLink struct {
 	LastUpdatedAt string        `json:"lastUpdatedAt"`
 	Ends          []TopologyEnd `json:"ends"`
+}
+
+// BuildUplinkPortSet returns a map of serial → set of portIDs that are
+// inter-device (uplink) ports, derived from the link-layer topology.
+// Only ends that connect two switches (both ends have a serial) are included.
+func BuildUplinkPortSet(topo *TopologyData) map[string]map[string]struct{} {
+	uplinks := make(map[string]map[string]struct{})
+	if topo == nil {
+		return uplinks
+	}
+	add := func(serial, portID string) {
+		if serial == "" || portID == "" {
+			return
+		}
+		if uplinks[serial] == nil {
+			uplinks[serial] = make(map[string]struct{})
+		}
+		uplinks[serial][portID] = struct{}{}
+	}
+	for _, link := range topo.Links {
+		if len(link.Ends) < 2 {
+			continue
+		}
+		// Both ends must reference a device with a serial (i.e. a managed switch/AP).
+		if link.Ends[0].Device.Serial == "" || link.Ends[1].Device.Serial == "" {
+			continue
+		}
+		add(link.Ends[0].Device.Serial, link.Ends[0].PortId)
+		add(link.Ends[1].Device.Serial, link.Ends[1].PortId)
+	}
+	return uplinks
 }
 
 // TopologyData holds nodes and links for a network's link-layer topology.
@@ -651,6 +732,157 @@ func (m *MerakiClient) GetNetworkTopology(ctx context.Context, networkID string)
 		return nil, err
 	}
 	return &result, nil
+}
+
+// GetNetworkTopologyRaw retrieves the raw JSON bytes for the link-layer topology of a network.
+func (m *MerakiClient) GetNetworkTopologyRaw(ctx context.Context, networkID string) ([]byte, error) {
+	path := fmt.Sprintf("/networks/%s/topology/linkLayer", networkID)
+	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
+	return body, err
+}
+
+// GetSwitchPortsRaw retrieves the raw JSON bytes for all ports on a switch.
+func (m *MerakiClient) GetSwitchPortsRaw(ctx context.Context, serial string) ([]byte, error) {
+	path := fmt.Sprintf("/devices/%s/switch/ports", serial)
+	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
+	return body, err
+}
+
+// NetworkLinkAggregation represents a network-level link aggregation group.
+type NetworkLinkAggregation struct {
+	ID          string `json:"id"`
+	SwitchPorts []struct {
+		Serial string `json:"serial"`
+		PortID string `json:"portId"`
+	} `json:"switchPorts"`
+}
+
+// GetNetworkLinkAggregations returns a map of serial → (aggrIndex → []portIDs)
+// built from the network-level /networks/{id}/switch/linkAggregations endpoint.
+// The aggrIndex is 0-based, assigned in the order the LAGs appear for that serial,
+// matching the "AGGR/0", "AGGR/1"... IDs that Meraki uses in the MAC table.
+// Returns an empty map on error.
+func (m *MerakiClient) GetNetworkLinkAggregations(ctx context.Context, networkID string) map[string]map[string][]string {
+	path := fmt.Sprintf("/networks/%s/switch/linkAggregations", networkID)
+	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
+	if err != nil {
+		return map[string]map[string][]string{}
+	}
+	var lags []NetworkLinkAggregation
+	if err := json.Unmarshal(body, &lags); err != nil {
+		return map[string]map[string][]string{}
+	}
+
+	// Group LAGs by switch serial so we can assign AGGR/0, AGGR/1, etc. per switch.
+	// We track the order each LAG index is assigned per serial to match MAC table naming.
+	result := make(map[string]map[string][]string)
+	// For each LAG, collect the port IDs grouped by serial
+	for _, lag := range lags {
+		// Build serial→portIDs for this LAG
+		bySerial := make(map[string][]string)
+		for _, sp := range lag.SwitchPorts {
+			if sp.Serial == "" || sp.PortID == "" {
+				continue
+			}
+			bySerial[sp.Serial] = append(bySerial[sp.Serial], sp.PortID)
+		}
+		for serial, portIDs := range bySerial {
+			if result[serial] == nil {
+				result[serial] = make(map[string][]string)
+			}
+			// Assign next available AGGR index for this serial
+			idx := 0
+			for {
+				key := fmt.Sprintf("AGGR/%d", idx)
+				if _, exists := result[serial][key]; !exists {
+					// Sort ports numerically for stable output
+					sort.Slice(portIDs, func(i, j int) bool {
+						ai, ei := strconv.Atoi(portIDs[i])
+						aj, ej := strconv.Atoi(portIDs[j])
+						if ei == nil && ej == nil {
+							return ai < aj
+						}
+						return portIDs[i] < portIDs[j]
+					})
+					result[serial][key] = portIDs
+					break
+				}
+				idx++
+			}
+		}
+	}
+	return result
+}
+
+// LLDPCDPData holds the LLDP/CDP neighbor data for a device.
+type LLDPCDPData struct {
+	// Ports maps port ID string → map of protocol ("lldp"/"cdp") → neighbor info
+	Ports     map[string]map[string]interface{} `json:"ports"`
+	SourceMac string                            `json:"sourceMac"`
+}
+
+// GetDeviceUplinkPorts returns the set of port IDs on the given device that are
+// confirmed switch-to-switch uplinks — i.e. ports where the LLDP/CDP neighbor
+// is a switch (CDP capabilities contains "Switch" and neighbor has a Meraki
+// dashboard URL). APs and other non-switch Meraki devices are excluded.
+// Returns an empty set (never nil) on error.
+func (m *MerakiClient) GetDeviceUplinkPorts(ctx context.Context, serial string) map[string]struct{} {
+	path := fmt.Sprintf("/devices/%s/lldpCdp", serial)
+	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
+	if err != nil {
+		return map[string]struct{}{}
+	}
+	// The LLDP/CDP response ports field is:
+	//   { "portId": { "cdp": {...}, "lldp": {...}, "deviceMac": "...", "device": {"url": "..."} } }
+	// "device.url" and "cdp" are siblings at the port level, not nested inside each protocol.
+	var raw struct {
+		Ports map[string]map[string]json.RawMessage `json:"ports"`
+	}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return map[string]struct{}{}
+	}
+	uplinks := make(map[string]struct{})
+	for portID, portData := range raw.Ports {
+		// Check if the neighbor is a switch via CDP capabilities.
+		isSwitchNeighbor := false
+		if cdpRaw, ok := portData["cdp"]; ok {
+			var cdp struct {
+				Capabilities string `json:"capabilities"`
+			}
+			if json.Unmarshal(cdpRaw, &cdp) == nil {
+				if strings.Contains(cdp.Capabilities, "Switch") {
+					isSwitchNeighbor = true
+				}
+			}
+		}
+		if !isSwitchNeighbor {
+			// Also accept if LLDP systemCapabilities mentions bridge/switch
+			if lldpRaw, ok := portData["lldp"]; ok {
+				var lldp struct {
+					SystemCapabilities string `json:"systemCapabilities"`
+				}
+				if json.Unmarshal(lldpRaw, &lldp) == nil {
+					caps := lldp.SystemCapabilities
+					if strings.Contains(caps, "S-VLAN") || strings.Contains(caps, "Bridge") {
+						isSwitchNeighbor = true
+					}
+				}
+			}
+		}
+		if !isSwitchNeighbor {
+			continue
+		}
+		// Confirm it's a Meraki-managed device via device.url.
+		if devRaw, ok := portData["device"]; ok {
+			var dev struct {
+				URL string `json:"url"`
+			}
+			if json.Unmarshal(devRaw, &dev) == nil && strings.Contains(dev.URL, "meraki.com") {
+				uplinks[portID] = struct{}{}
+			}
+		}
+	}
+	return uplinks
 }
 
 // ResolveIPToMAC resolves an IP address to MAC address by querying Meraki clients API.

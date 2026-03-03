@@ -16,12 +16,22 @@ type ResultRow struct {
 	SwitchName   string
 	SwitchSerial string
 	Port         string
+	AggrPorts    []string // member ports when Port is a link-aggregation (AGGR/*) port
 	MAC          string
 	LastSeen     string
 	IP           string
 	Hostname     string
 	VLAN         int
 	PortMode     string // "access", "trunk", or ""
+	IsUplink     bool   // true when port appears in link-layer topology as an inter-device link
+}
+
+// aggrPortsStr returns the AggrPorts as a comma-separated string, or empty string if none.
+func aggrPortsStr(row ResultRow) string {
+	if len(row.AggrPorts) == 0 {
+		return ""
+	}
+	return strings.Join(row.AggrPorts, ", ")
 }
 
 // WriteCSV writes results in CSV format with headers.
@@ -29,11 +39,15 @@ func WriteCSV(w io.Writer, rows []ResultRow) {
 	writer := csv.NewWriter(w)
 	defer writer.Flush()
 
-	_ = writer.Write([]string{"Org", "Network", "Switch", "Serial", "Port", "MAC", "IP", "Hostname", "LastSeen"})
+	_ = writer.Write([]string{"Org", "Network", "Switch", "Serial", "Port", "AggrPorts", "MAC", "IP", "Hostname", "LastSeen", "Uplink"})
 	for _, row := range rows {
+		uplinkStr := ""
+		if row.IsUplink {
+			uplinkStr = "yes"
+		}
 		_ = writer.Write([]string{
 			row.OrgName, row.NetworkName, row.SwitchName, row.SwitchSerial,
-			row.Port, row.MAC, row.IP, row.Hostname, row.LastSeen,
+			row.Port, aggrPortsStr(row), row.MAC, row.IP, row.Hostname, row.LastSeen, uplinkStr,
 		})
 	}
 }
@@ -41,11 +55,11 @@ func WriteCSV(w io.Writer, rows []ResultRow) {
 // WriteText writes results in plain text table format with aligned columns.
 func WriteText(w io.Writer, rows []ResultRow) {
 	if len(rows) == 0 {
-		fmt.Fprintln(w, "No results")
+		_, _ = fmt.Fprintln(w, "No results")
 		return
 	}
 
-	headers := []string{"Org", "Network", "Switch", "Serial", "Port", "MAC", "IP", "Hostname", "LastSeen"}
+	headers := []string{"Org", "Network", "Switch", "Serial", "Port", "AggrPorts", "MAC", "IP", "Hostname", "LastSeen", "Uplink"}
 	widths := make([]int, len(headers))
 	for i, h := range headers {
 		widths[i] = len(h)
@@ -56,47 +70,59 @@ func WriteText(w io.Writer, rows []ResultRow) {
 		widths[2] = max(widths[2], len(row.SwitchName))
 		widths[3] = max(widths[3], len(row.SwitchSerial))
 		widths[4] = max(widths[4], len(row.Port))
-		widths[5] = max(widths[5], len(row.MAC))
-		widths[6] = max(widths[6], len(row.IP))
-		widths[7] = max(widths[7], len(row.Hostname))
-		widths[8] = max(widths[8], len(row.LastSeen))
+		widths[5] = max(widths[5], len(aggrPortsStr(row)))
+		widths[6] = max(widths[6], len(row.MAC))
+		widths[7] = max(widths[7], len(row.IP))
+		widths[8] = max(widths[8], len(row.Hostname))
+		widths[9] = max(widths[9], len(row.LastSeen))
+		// widths[10] is "Uplink"/"yes"/"" — max is len("Uplink")=6
 	}
 
 	separator := strings.Repeat("-", sum(widths)+len(widths)*3-1)
-	fmt.Fprintln(w, separator)
-	fmt.Fprintln(w, formatRow(headers, widths))
-	fmt.Fprintln(w, separator)
+	_, _ = fmt.Fprintln(w, separator)
+	_, _ = fmt.Fprintln(w, formatRow(headers, widths))
+	_, _ = fmt.Fprintln(w, separator)
 	for _, row := range rows {
-		values := []string{row.OrgName, row.NetworkName, row.SwitchName, row.SwitchSerial, row.Port, row.MAC, row.IP, row.Hostname, row.LastSeen}
-		fmt.Fprintln(w, formatRow(values, widths))
+		uplinkStr := ""
+		if row.IsUplink {
+			uplinkStr = "yes"
+		}
+		values := []string{row.OrgName, row.NetworkName, row.SwitchName, row.SwitchSerial, row.Port, aggrPortsStr(row), row.MAC, row.IP, row.Hostname, row.LastSeen, uplinkStr}
+		_, _ = fmt.Fprintln(w, formatRow(values, widths))
 	}
-	fmt.Fprintln(w, separator)
+	_, _ = fmt.Fprintln(w, separator)
 }
 
 // WriteHTML writes results in HTML table format.
 func WriteHTML(w io.Writer, rows []ResultRow) {
-	fmt.Fprintln(w, "<table>")
-	fmt.Fprintln(w, "  <thead>")
-	fmt.Fprintln(w, "    <tr>")
-	fmt.Fprintln(w, "      <th>Org</th><th>Network</th><th>Switch</th><th>Serial</th><th>Port</th><th>MAC</th><th>IP</th><th>Hostname</th><th>Last Seen</th>")
-	fmt.Fprintln(w, "    </tr>")
-	fmt.Fprintln(w, "  </thead>")
-	fmt.Fprintln(w, "  <tbody>")
+	_, _ = fmt.Fprintln(w, "<table>")
+	_, _ = fmt.Fprintln(w, "  <thead>")
+	_, _ = fmt.Fprintln(w, "    <tr>")
+	_, _ = fmt.Fprintln(w, "      <th>Org</th><th>Network</th><th>Switch</th><th>Serial</th><th>Port</th><th>AggrPorts</th><th>MAC</th><th>IP</th><th>Hostname</th><th>Last Seen</th><th>Uplink</th>")
+	_, _ = fmt.Fprintln(w, "    </tr>")
+	_, _ = fmt.Fprintln(w, "  </thead>")
+	_, _ = fmt.Fprintln(w, "  <tbody>")
 	for _, row := range rows {
-		fmt.Fprintf(w, "    <tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n",
+		uplinkStr := ""
+		if row.IsUplink {
+			uplinkStr = "yes"
+		}
+		_, _ = fmt.Fprintf(w, "    <tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>\n",
 			html.EscapeString(row.OrgName),
 			html.EscapeString(row.NetworkName),
 			html.EscapeString(row.SwitchName),
 			html.EscapeString(row.SwitchSerial),
 			html.EscapeString(row.Port),
+			html.EscapeString(aggrPortsStr(row)),
 			html.EscapeString(row.MAC),
 			html.EscapeString(row.IP),
 			html.EscapeString(row.Hostname),
 			html.EscapeString(row.LastSeen),
+			html.EscapeString(uplinkStr),
 		)
 	}
-	fmt.Fprintln(w, "  </tbody>")
-	fmt.Fprintln(w, "</table>")
+	_, _ = fmt.Fprintln(w, "  </tbody>")
+	_, _ = fmt.Fprintln(w, "</table>")
 }
 
 // formatRow formats a row of values with column widths for text table output.

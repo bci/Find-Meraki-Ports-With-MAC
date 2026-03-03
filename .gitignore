@@ -38,3 +38,4 @@ Thumbs.db
 # Log files
 *.log
 Find-Meraki-Ports-With-MAC.log
+findmac

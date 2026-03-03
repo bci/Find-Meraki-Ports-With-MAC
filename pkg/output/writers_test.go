@@ -25,10 +25,10 @@ func TestWriteCSV(t *testing.T) {
 	WriteCSV(&buf, rows)
 
 	output := buf.String()
-	if !strings.Contains(output, "Org,Network,Switch,Serial,Port,MAC,IP,Hostname,LastSeen") {
+	if !strings.Contains(output, "Org,Network,Switch,Serial,Port,AggrPorts,MAC,IP,Hostname,LastSeen") {
 		t.Error("WriteCSV() missing CSV header")
 	}
-	if !strings.Contains(output, "Test Org,Test Network,test-switch,S123,3,00:11:22:33:44:55,192.168.1.100,test-host,2026-02-13T10:30:00Z") {
+	if !strings.Contains(output, "Test Org,Test Network,test-switch,S123,3,,00:11:22:33:44:55,192.168.1.100,test-host,2026-02-13T10:30:00Z") {
 		t.Error("WriteCSV() missing expected row data")
 	}
 }
