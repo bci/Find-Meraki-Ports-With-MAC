@@ -568,9 +568,6 @@ class App {
       this._presetApplied = true;
       if (this._preset.mac) document.getElementById('macInput').value = this._preset.mac;
       if (this._preset.ip)  document.getElementById('ipInput').value  = this._preset.ip;
-      if (this._testDataMode && !this._preset.mac && !this._preset.ip) {
-        document.getElementById('macInput').value = 'a4:c3:f0:85:1d:3e';
-      }
     }
     // Auto-resolve once if CLI supplied MAC/IP or in test-data mode
     if (this._autoResolvePending) {
