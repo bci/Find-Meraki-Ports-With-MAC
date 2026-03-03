@@ -1,0 +1,46 @@
+/*
+ * Topology view styles — served at /static/css/topology.css
+ * Loaded by handleTopology in web_handlers.go.
+ */
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0f172a;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-serif;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+#topbar{display:flex;align-items:center;gap:10px;padding:8px 16px;background:#1e293b;border-bottom:1px solid #334155;flex-shrink:0;flex-wrap:wrap}
+#topbar h2{font-size:.95rem;font-weight:600;color:#94a3b8;margin-right:4px}
+.pill{background:#334155;border-radius:999px;padding:3px 12px;font-size:.8rem;color:#cbd5e1;white-space:nowrap}
+.pill.highlight{background:#78350f;color:#fde68a;font-weight:600}
+.spacer{flex:1}
+button.tbtn{background:#1e40af;border:none;color:#bfdbfe;padding:4px 14px;border-radius:6px;cursor:pointer;font-size:.8rem}
+button.tbtn:hover{background:#1d4ed8}
+button.tbtn.danger{background:#7f1d1d;color:#fca5a5}
+button.tbtn.danger:hover{background:#991b1b}
+#canvas{flex:1;overflow:hidden}
+svg{width:100%;height:100%}
+.link{stroke:#334155;stroke-width:2px}
+.link.highlighted{stroke:#f59e0b;stroke-width:3px;stroke-dasharray:6,3}
+.link.pc-link{stroke:#f59e0b;stroke-width:2.5px;stroke-dasharray:8,4}
+.node circle{stroke:#1e293b;stroke-width:2px;cursor:pointer;transition:filter .2s}
+.node circle:hover{filter:brightness(1.3)}
+.node.switch circle{fill:#3b82f6}
+.node.wireless circle{fill:#a855f7}
+.node.appliance circle{fill:#10b981}
+.node.camera circle{fill:#ec4899}
+.node.other circle{fill:#64748b}
+.node.highlighted circle{fill:#f59e0b;filter:drop-shadow(0 0 8px #f59e0b)}
+.node.highlighted text{fill:#fde68a;font-weight:700}
+.node.pc rect.pc-screen{fill:#f59e0b;stroke:#1e293b;stroke-width:2px;cursor:pointer;transition:filter .2s}
+.node.pc rect.pc-screen:hover{filter:brightness(1.2)}
+.node.pc rect.pc-stand,.node.pc rect.pc-base{fill:#d97706;cursor:pointer}
+.node.pc text{fill:#fde68a;font-weight:700}
+.port-label{fill:#f59e0b;font-size:10px;font-weight:700;pointer-events:none;text-anchor:middle}
+.node text{fill:#cbd5e1;font-size:11px;pointer-events:none;text-anchor:middle}
+#tooltip{position:fixed;background:#1e293b;border:1px solid #475569;border-radius:8px;padding:8px 12px;font-size:.78rem;pointer-events:none;opacity:0;transition:opacity .15s;max-width:260px;z-index:100}
+#tooltip .tt-title{font-weight:700;color:#f1f5f9;margin-bottom:4px}
+#tooltip .tt-row{color:#94a3b8}
+#tooltip .tt-row span{color:#e2e8f0}
+#tooltip .tt-row.hi{color:#f59e0b}
+#tooltip .tt-row.hi span{color:#fde68a}
+#legend{position:fixed;bottom:16px;left:16px;background:#1e293b;border:1px solid #334155;border-radius:8px;padding:8px 12px;font-size:.75rem}
+#legend .li{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+#legend .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+#legend .dot.sq{border-radius:2px}

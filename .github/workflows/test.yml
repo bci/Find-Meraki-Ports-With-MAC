@@ -57,6 +57,21 @@ jobs:
       with:
         version: latest
 
+  copyright:
+    name: Copyright Headers
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.21'
+
+    - name: Verify GPL copyright headers and no inline CSS/JS in templates
+      run: go test -run 'TestCopyrightHeaders|TestTemplatesNoInlineCSS|TestTemplatesNoInlineJS' -v ./...
+
   build:
     name: Build
     runs-on: ubuntu-latest
