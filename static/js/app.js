@@ -309,6 +309,11 @@ class App {
         document.getElementById('macInput').value = effectiveMac;
       }
 
+      // If we searched by MAC and the results resolved an IP, back-fill the IP field
+      if (!ip && this.results[0] && this.results[0].ip) {
+        document.getElementById('ipInput').value = this.results[0].ip;
+      }
+
       // Manufacturer lookup
       if (effectiveMac) this._lookupManufacturer(effectiveMac);
     } catch (e) {
