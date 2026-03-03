@@ -707,13 +707,14 @@ func startWebServer(cfg Config, host, port string) {
 		r.HandleFunc("/api/config", handleTestGetConfig).Methods("GET")
 		r.HandleFunc("/api/networks", handleTestGetNetworks).Methods("GET")
 		r.HandleFunc("/api/resolve", handleTestResolve).Methods("POST")
+		r.HandleFunc("/api/manufacturer", handleTestGetManufacturer).Methods("GET")
 	} else {
 		r.HandleFunc("/api/validate-key", handleValidateKey).Methods("POST")
 		r.HandleFunc("/api/config", handleGetConfig).Methods("GET")
 		r.HandleFunc("/api/networks", handleGetNetworks).Methods("GET")
 		r.HandleFunc("/api/resolve", handleResolve).Methods("POST")
+		r.HandleFunc("/api/manufacturer", handleGetManufacturer).Methods("GET")
 	}
-	r.HandleFunc("/api/manufacturer", handleGetManufacturer).Methods("GET")
 	r.HandleFunc("/topology", handleTopology).Methods("GET")
 	r.HandleFunc("/api/topology", handleGetTopology).Methods("GET")
 	r.HandleFunc("/api/alerts", handleGetAlerts).Methods("GET")
@@ -938,6 +939,18 @@ func handleTestGetConfig(w http.ResponseWriter, r *http.Request) {
 		"presetNetwork": firstNonEmpty(webPresetNetwork, "ALL"),
 		"testData":      true,
 	})
+}
+
+func handleTestGetManufacturer(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	mac := r.URL.Query().Get("mac")
+	// The demo MAC (a4:c3:f0:...) has an Intel OUI in reality; override it so
+	// the Device Lookup panel matches the "Apple" shown in the results table.
+	vendor := "Apple"
+	if mac != "" && strings.ToLower(mac[:8]) != "a4:c3:f0" {
+		vendor = lookupOUI(mac)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]string{"manufacturer": vendor})
 }
 
 func handleTestGetNetworks(w http.ResponseWriter, r *http.Request) {
