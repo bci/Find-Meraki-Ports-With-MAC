@@ -16,11 +16,11 @@
 package main
 
 import (
-"bufio"
-"os"
-"path/filepath"
-"strings"
-"testing"
+	"bufio"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
 )
 
 // copyrightHeader is the exact first line every .go source file must carry.
@@ -36,12 +36,12 @@ func TestCopyrightHeaders(t *testing.T) {
 	root := "." // run from module root via `go test ./...`
 
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-if err != nil {
-return err
-}
+		if err != nil {
+			return err
+		}
 
-// Skip vendor, hidden dirs, and test-build artefacts
-if d.IsDir() {
+		// Skip vendor, hidden dirs, and test-build artefacts
+		if d.IsDir() {
 			name := d.Name()
 			if name == "vendor" || (len(name) > 0 && name[0] == '.') || name == "bin" || name == "coverage" {
 				return filepath.SkipDir
@@ -76,7 +76,7 @@ if d.IsDir() {
 
 		if firstLine != copyrightHeader {
 			t.Errorf("missing GPL copyright header in %s\n  want: %q\n   got: %q",
-path, copyrightHeader, firstLine)
+				path, copyrightHeader, firstLine)
 		}
 		return nil
 	})
@@ -108,10 +108,10 @@ func checkNoInlineAsset(t *testing.T, needle, description string) {
 	t.Helper()
 	root := "."
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-if err != nil {
-return err
-}
-if d.IsDir() {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
 			name := d.Name()
 			if name == "vendor" || (len(name) > 0 && name[0] == '.') || name == "bin" || name == "coverage" {
 				return filepath.SkipDir
