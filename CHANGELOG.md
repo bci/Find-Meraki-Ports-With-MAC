@@ -5,7 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0] - 2026-02-28
+## [1.3.0] - 2026-03-02
+
+### Added
+- **Demo Mode (`--test-data`)**: New flag launches the web interface with sanitised demo data — no API key required. Useful for screenshots, training, and evaluations. Auto-populates the MAC field and triggers an automatic resolve on load.
+- **Live Demo Log Streaming**: In `--test-data` mode the resolve handler streams realistic per-switch log messages over WebSocket (in a goroutine) to simulate a live scan, including IP resolution, per-network progress, hit/miss per switch, and a final summary.
+- **IP Back-fill**: After a MAC-based resolve, the resolved IP address is now written back into the IP input field, mirroring the existing MAC back-fill behaviour when searching by IP.
+
+### Fixed
+- **Uplink Detection**: Replaced the LLDP/CDP-based uplink detection with the `/devices/{serial}/switch/ports/statuses` API `isUplink` field. The previous approach missed ports whose neighbours send no LLDP/CDP frames (e.g. ISP fibre routers). The new approach mirrors exactly what the Meraki Dashboard shows.
+- **Third-party Switch Uplinks**: Removed the `meraki.com` URL gate that prevented third-party upstream switches (e.g. GTrans core) from being recognised as uplinks.
+- **AP False-positives on Uplink Detection**: After removing the URL gate, APs advertising `"Router, Switch"` in CDP were incorrectly flagged as switch uplinks. Fixed by requiring CDP `"Switch"` without `"Router"`, and checking LLDP `systemCapabilities` first (S-VLAN/Bridge = switch; Two-port MAC Relay = AP).
+- **Mode Column Sorting**: The mode column sort now correctly distinguishes `uplink` from `trunk` rows. Previously `_colValue('mode')` returned the raw `portMode` value for uplink rows, so uplink and trunk sorted identically.
+- **Demo Manufacturer Lookup**: The demo MAC `a4:c3:f0:85:1d:3e` has an Intel OUI in the IEEE registry. In `--test-data` mode the `/api/manufacturer` endpoint now returns `Apple` to match the manufacturer shown in the results table.
+
+### Changed
+- **Demo Data Model**: Demo results now show a single MAC address found across one primary network (HQ Campus, access + uplink hops) plus two additional networks where the MAC is seen on uplink/border ports only — a physically valid topology.
+- **Demo Constants Consolidated**: `demoMAC`, `demoIP`, `demoHostname`, `demoOrg`, `demoMfr`, `demoOUI` extracted as package-level constants shared by all demo handlers, eliminating duplicated string literals.
+- **Uplink Note**: Removed the list of switch names from the uplink advisory callout in the results table.
+
+
 
 ### Added
 - **Interactive Web UI**: New `--interactive` flag launches a local HTTP server with a single-page web interface for Meraki port/device lookup
@@ -118,6 +137,7 @@ This version represents the initial stable release of the Find-Meraki-Ports-With
 
 For more information, see the [README](README.md) and [repository](https://github.com/bci/Find-Meraki-Ports-With-MAC).
 
+[1.3.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.3.0
 [1.2.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.2.0
 [1.1.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.1.0
 [1.0.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.0.0</content>

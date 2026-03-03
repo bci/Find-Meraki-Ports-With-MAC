@@ -49,6 +49,7 @@ This tool utilizes the following Meraki Dashboard API v1 endpoints:
 - `GET /devices/{serial}/clients` - Get device-level client information (fallback)
 - `POST /devices/{serial}/liveTools/macTable` - Initiate live MAC table lookup (critical for Catalyst switches)
 - `GET /devices/{serial}/liveTools/macTable/{macTableId}` - Poll for MAC table lookup results
+- `GET /devices/{serial}/switch/ports/statuses` - Determine uplink ports (matches what Meraki Dashboard shows)
 
 The live MAC table lookup is essential for Cisco Catalyst switches managed by Meraki, as standard client endpoints may have limited visibility. The clients API provides IP-to-MAC resolution for IP-based lookups.
 
@@ -117,6 +118,12 @@ Launch a user-friendly web interface for device resolution with real-time featur
 
 ```
 Find-Meraki-Ports-With-MAC.exe --interactive
+```
+
+Launch with sanitised demo data (no API key required — useful for screenshots and demos):
+
+```
+Find-Meraki-Ports-With-MAC.exe --interactive --test-data
 ```
 
 The web interface provides:
@@ -233,6 +240,7 @@ Create a `.env` file (see `.env.example`).
 
 **Interactive Web Interface:**
 - --interactive: launch web interface mode
+- --test-data: launch web interface with sanitised demo data (no API key required)
 - --web-port: port for web server (default: 8080)
 - --web-host: host for web server (default: localhost)
 
