@@ -1,4 +1,4 @@
-﻿// Package main provides a command-line tool for finding MAC addresses on Meraki switches.
+// Package main provides a command-line tool for finding MAC addresses on Meraki switches.
 // It supports both native Meraki MS switches and Cisco Catalyst switches managed by Meraki.
 package main
 
@@ -479,10 +479,10 @@ func main() {
 					log.Debugf("Adding network client %s on %s port %s", macaddr.FormatMacColon(normMAC), switchName, port)
 				}
 
-				vlan, portMode := enrichPortInfo(ctx, client, serial, port, 0, "")
+				aggrMembers := resolveAggrPorts(ctx, client, serial, port, cliAggrCache)
+				vlan, portMode := enrichPortInfoWithMembers(ctx, client, serial, port, aggrMembers, 0, "")
 
 				ip, hn := ipAndHostname(normMAC, c.IP, serial)
-				aggrMembers := resolveAggrPorts(ctx, client, serial, port, cliAggrCache)
 				addResult(resultsIndex, &results, output.ResultRow{
 					OrgName:      org.Name,
 					NetworkName:  net.Name,
@@ -572,18 +572,19 @@ func main() {
 								continue
 							}
 
-							// Enrich with switch port API (authoritative VLAN + mode)
-							richVLAN, richMode := enrichPortInfo(ctx, client, dev.Serial, port, int(vlan), portMode)
+							// If not already parsed from the raw string, try API/cache lookup
+							if aggrMembers == nil {
+								aggrMembers = resolveAggrPorts(ctx, client, dev.Serial, port, cliAggrCache)
+							}
+
+							// Enrich with switch port API (authoritative VLAN + mode); for AGGR use first member
+							richVLAN, richMode := enrichPortInfoWithMembers(ctx, client, dev.Serial, port, aggrMembers, int(vlan), portMode)
 
 							if cfg.Verbose {
 								log.Debugf("Found MAC %s on %s port %s (VLAN %d, mode=%s) via live lookup",
 									macaddr.FormatMacColon(normMAC), firstNonEmpty(dev.Name, dev.Serial), port, richVLAN, richMode)
 							}
 
-							// If not already parsed from the raw string, try API/cache lookup
-							if aggrMembers == nil {
-								aggrMembers = resolveAggrPorts(ctx, client, dev.Serial, port, cliAggrCache)
-							}
 							ip, hn := ipAndHostname(normMAC, "", dev.Serial)
 							_, isUplink := cliGetUplinkPorts(dev.Serial)[port]
 							addResult(resultsIndex, &results, output.ResultRow{
@@ -634,9 +635,9 @@ func main() {
 					if !filters.MatchesPortFilter(port, cfg.PortFilter) {
 						continue
 					}
-					vlan, portMode := enrichPortInfo(ctx, client, dev.Serial, port, 0, "")
-					ip, hn := ipAndHostname(normMAC, "", dev.Serial)
 					aggrMembers2 := resolveAggrPorts(ctx, client, dev.Serial, port, cliAggrCache)
+					vlan, portMode := enrichPortInfoWithMembers(ctx, client, dev.Serial, port, aggrMembers2, 0, "")
+					ip, hn := ipAndHostname(normMAC, "", dev.Serial)
 					addResult(resultsIndex, &results, output.ResultRow{
 						OrgName:      org.Name,
 						NetworkName:  net.Name,
@@ -1556,15 +1557,34 @@ func handleWebSocketLogs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// enrichPortInfo calls the switch port API to get authoritative VLAN and port mode.
+// enrichPortInfoWithMembers calls the switch port API to get authoritative VLAN and port mode.
 // Falls back to the provided defaults if the call fails or port is unsupported.
-func enrichPortInfo(ctx context.Context, client *meraki.MerakiClient, serial, portID string, defaultVLAN int, defaultMode string) (vlan int, portMode string) {
+// For AGGR ports, it looks up VLAN/mode from the first resolvable member port
+// (all member ports must be configured identically per Meraki requirements).
+func enrichPortInfoWithMembers(ctx context.Context, client *meraki.MerakiClient, serial, portID string, aggrMembers []string, defaultVLAN int, defaultMode string) (vlan int, portMode string) {
 	vlan, portMode = defaultVLAN, defaultMode
 	if serial == "" || portID == "" || portID == "unknown" {
 		return
 	}
-	// AGGR ports are link-aggregation virtual ports — no individual switch port API entry exists for them.
+	// AGGR ports are link-aggregation virtual ports — no individual switch port API entry exists.
+	// All member ports must be configured identically, so look up VLAN/mode from the first member.
 	if strings.HasPrefix(portID, "AGGR") {
+		for _, memberPort := range aggrMembers {
+			if memberPort == "" {
+				continue
+			}
+			sp, err := client.GetSwitchPort(ctx, serial, memberPort)
+			if err != nil {
+				continue
+			}
+			if sp.Type != "" {
+				portMode = sp.Type
+			}
+			if sp.Vlan > 0 {
+				vlan = sp.Vlan
+			}
+			return // all members are identical; first success is enough
+		}
 		return
 	}
 	sp, err := client.GetSwitchPort(ctx, serial, portID)
@@ -1866,10 +1886,10 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 			switchName := firstNonEmpty(dev.Name, c.RecentDeviceName, serial)
 
 			port := firstNonEmpty(c.SwitchportName, c.Switchport, c.Port, "unknown")
-			vlan, portMode := enrichPortInfo(ctx, client, serial, port, 0, "")
+			aggrMembers := resolveAggrPorts(ctx, client, serial, port, aggrCache)
+			vlan, portMode := enrichPortInfoWithMembers(ctx, client, serial, port, aggrMembers, 0, "")
 			ip, hn := resolveIP(normMAC, c.IP, serial)
 
-			aggrMembers := resolveAggrPorts(ctx, client, serial, port, aggrCache)
 			addResult(resultsIndex, &results, output.ResultRow{
 				OrgName:      org.Name,
 				NetworkName:  network.Name,
@@ -1942,7 +1962,7 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 					if aggrMembers == nil {
 						aggrMembers = resolveAggrPorts(ctx, client, dev.Serial, cleanPortID, aggrCache)
 					}
-					richVLAN, richMode := enrichPortInfo(ctx, client, dev.Serial, cleanPortID, int(vlan), portMode)
+					richVLAN, richMode := enrichPortInfoWithMembers(ctx, client, dev.Serial, cleanPortID, aggrMembers, int(vlan), portMode)
 					ip, hn := resolveIP(normMAC, "", dev.Serial)
 					addResult(resultsIndex, &results, output.ResultRow{
 						OrgName:      org.Name,
@@ -1984,9 +2004,9 @@ func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClie
 				continue
 			}
 			port := firstNonEmpty(c.SwitchportName, c.Switchport, c.Port, "unknown")
-			vlan, portMode := enrichPortInfo(ctx, client, dev.Serial, port, 0, "")
-			ip, hn := resolveIP(normMAC, "", dev.Serial)
 			aggrMembers3 := resolveAggrPorts(ctx, client, dev.Serial, port, aggrCache)
+			vlan, portMode := enrichPortInfoWithMembers(ctx, client, dev.Serial, port, aggrMembers3, 0, "")
+			ip, hn := resolveIP(normMAC, "", dev.Serial)
 			addResult(resultsIndex, &results, output.ResultRow{
 				OrgName:      org.Name,
 				NetworkName:  network.Name,
