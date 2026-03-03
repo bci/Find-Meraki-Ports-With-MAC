@@ -15,6 +15,7 @@ class App {
     this._preset = { mac: '', ip: '', org: '', network: '' };
     this._autoResolvePending = false;
     this._presetApplied = false;
+    this._testDataMode = false;
 
     this._restorePrefs();
     this._bindEvents();
@@ -35,7 +36,8 @@ class App {
         org:     data.presetOrg     || '',
         network: data.presetNetwork || ''
       };
-      this._autoResolvePending = !!(this._preset.mac || this._preset.ip);
+      this._testDataMode = !!data.testData;
+      this._autoResolvePending = !!(this._preset.mac || this._preset.ip) || this._testDataMode;
       if (data.apiKey) {
         this.apiKey = data.apiKey;
         document.getElementById('apiKey').value = '••••••••••••••••';
@@ -270,8 +272,8 @@ class App {
   async _resolve() {
     const mac = document.getElementById('macInput').value.trim();
     const ip  = document.getElementById('ipInput').value.trim();
-    if (!mac && !ip) { this.toast('Enter a MAC or IP address', 'warn'); return; }
-    if (!this.selectedNetwork) { this.toast('Select a network first', 'warn'); return; }
+    if (!mac && !ip && !this._testDataMode) { this.toast('Enter a MAC or IP address', 'warn'); return; }
+    if (!this.selectedNetwork && !this._testDataMode) { this.toast('Select a network first', 'warn'); return; }
 
     this._setBusy('resolveBtn', true, 'Resolving…');
     this.results = [];
@@ -557,12 +559,15 @@ class App {
     document.getElementById('resolveSection').classList.remove('hidden');
     document.getElementById('mfrRow').classList.add('hidden');
     // Apply CLI presets to inputs once when the section first becomes visible
-    if (!this._presetApplied && (this._preset.mac || this._preset.ip)) {
+    if (!this._presetApplied) {
       this._presetApplied = true;
       if (this._preset.mac) document.getElementById('macInput').value = this._preset.mac;
       if (this._preset.ip)  document.getElementById('ipInput').value  = this._preset.ip;
+      if (this._testDataMode && !this._preset.mac && !this._preset.ip) {
+        document.getElementById('macInput').value = 'a4:c3:f0:85:1d:3e';
+      }
     }
-    // Auto-resolve once if CLI supplied MAC or IP
+    // Auto-resolve once if CLI supplied MAC/IP or in test-data mode
     if (this._autoResolvePending) {
       this._autoResolvePending = false;
       setTimeout(() => this._resolve(), 0);

@@ -930,12 +930,13 @@ func handleTestValidateKey(w http.ResponseWriter, r *http.Request) {
 
 func handleTestGetConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"apiKey":        "demo-key",
-		"presetMAC":     webPresetMAC,
+		"presetMAC":     firstNonEmpty(webPresetMAC, "a4:c3:f0:85:1d:3e"),
 		"presetIP":      webPresetIP,
 		"presetOrg":     "Acme Corporation",
-		"presetNetwork": webPresetNetwork,
+		"presetNetwork": firstNonEmpty(webPresetNetwork, "ALL"),
+		"testData":      true,
 	})
 }
 
