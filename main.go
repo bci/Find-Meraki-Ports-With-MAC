@@ -3,23 +3,23 @@
 package main
 
 import (
-"context"
-"errors"
-"flag"
-"fmt"
-"os"
-"sort"
-"strconv"
-"strings"
-"time"
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 
-"Find-Meraki-Ports-With-MAC/pkg/filters"
-"Find-Meraki-Ports-With-MAC/pkg/logger"
-"Find-Meraki-Ports-With-MAC/pkg/macaddr"
-"Find-Meraki-Ports-With-MAC/pkg/meraki"
-"Find-Meraki-Ports-With-MAC/pkg/output"
+	"Find-Meraki-Ports-With-MAC/pkg/filters"
+	"Find-Meraki-Ports-With-MAC/pkg/logger"
+	"Find-Meraki-Ports-With-MAC/pkg/macaddr"
+	"Find-Meraki-Ports-With-MAC/pkg/meraki"
+	"Find-Meraki-Ports-With-MAC/pkg/output"
 
-"github.com/joho/godotenv"
+	"github.com/joho/godotenv"
 )
 
 // Config holds all configuration options from environment variables and command-line flags.
@@ -46,20 +46,20 @@ type Config struct {
 // Version information injected at build time via ldflags.
 // Build with: go build -ldflags "-X main.Version=1.0.0 -X main.Commit=<git-sha> -X main.BuildTime=<timestamp>"
 const (
-RepositoryURL = "https://github.com/bci/Find-Meraki-Ports-With-MAC"
+	RepositoryURL = "https://github.com/bci/Find-Meraki-Ports-With-MAC"
 )
 
 var (
-Version          = "dev"     // Version set at build time
-Commit           = "unknown" // Git commit SHA set at build time
-BuildTime        = "unknown" // Build timestamp set at build time
-GoVersion        = "go1.21"  // Go version (can be updated at build time)
-webAPIKey        string      // API key pre-loaded from .env for the web interface
-webPresetMAC     string      // pre-filled MAC from CLI --mac
-webPresetIP      string      // pre-filled IP from CLI --ip
-webPresetOrgName string      // pre-selected org name from CLI --org
-webPresetNetwork string      // pre-selected network name from CLI --network
-webTestDataMode  bool        // --test-data: serve sanitised demo data, no API calls
+	Version          = "dev"     // Version set at build time
+	Commit           = "unknown" // Git commit SHA set at build time
+	BuildTime        = "unknown" // Build timestamp set at build time
+	GoVersion        = "go1.21"  // Go version (can be updated at build time)
+	webAPIKey        string      // API key pre-loaded from .env for the web interface
+	webPresetMAC     string      // pre-filled MAC from CLI --mac
+	webPresetIP      string      // pre-filled IP from CLI --ip
+	webPresetOrgName string      // pre-selected org name from CLI --org
+	webPresetNetwork string      // pre-selected network name from CLI --network
+	webTestDataMode  bool        // --test-data: serve sanitised demo data, no API calls
 )
 
 func main() {
@@ -237,318 +237,318 @@ func main() {
 	// Handle single organization auto-selection.
 	// When the API key is scoped to exactly one org, use it unconditionally.
 	// If an org name was specified but doesn't match, log a warning and continue.
-if len(orgs) == 1 {
-if cfg.OrgName != "" && cfg.OrgName != orgs[0].Name {
-log.Debugf("Org name %q not matched; auto-selecting only available organization: %s", cfg.OrgName, orgs[0].Name)
-}
-cfg.OrgName = orgs[0].Name
-log.Debugf("Auto-selected single organization: %s", cfg.OrgName)
-}
+	if len(orgs) == 1 {
+		if cfg.OrgName != "" && cfg.OrgName != orgs[0].Name {
+			log.Debugf("Org name %q not matched; auto-selecting only available organization: %s", cfg.OrgName, orgs[0].Name)
+		}
+		cfg.OrgName = orgs[0].Name
+		log.Debugf("Auto-selected single organization: %s", cfg.OrgName)
+	}
 
-org, err := selectOrganization(cfg.OrgName, orgs)
-if err != nil {
-exitWithError(log, err.Error())
-}
-log.Debugf("Organization: %s", org.Name)
+	org, err := selectOrganization(cfg.OrgName, orgs)
+	if err != nil {
+		exitWithError(log, err.Error())
+	}
+	log.Debugf("Organization: %s", org.Name)
 
-networks, err := client.GetNetworks(ctx, org.ID)
-if err != nil {
-exitWithError(log, err.Error())
-}
+	networks, err := client.GetNetworks(ctx, org.ID)
+	if err != nil {
+		exitWithError(log, err.Error())
+	}
 
-selectedNetworks, err := selectNetworks(cfg.NetworkName, networks)
-if err != nil {
-exitWithError(log, err.Error())
-}
+	selectedNetworks, err := selectNetworks(cfg.NetworkName, networks)
+	if err != nil {
+		exitWithError(log, err.Error())
+	}
 
-matcher := func(string) bool { return true }
-var resolvedHostname string
+	matcher := func(string) bool { return true }
+	var resolvedHostname string
 
-if cfg.IPAddress != "" {
-// IP resolution mode
-log.Debugf("Resolving IP: %s", cfg.IPAddress)
+	if cfg.IPAddress != "" {
+		// IP resolution mode
+		log.Debugf("Resolving IP: %s", cfg.IPAddress)
 
-// Resolve IP to MAC
-resolvedMAC, _, resolvedHostname, err := client.ResolveIPToMAC(ctx, org.ID, selectedNetworks, cfg.IPAddress)
-if err != nil {
-exitWithError(log, fmt.Sprintf("Failed to resolve IP %s: %v", cfg.IPAddress, err))
-}
+		// Resolve IP to MAC
+		resolvedMAC, _, resolvedHostname, err := client.ResolveIPToMAC(ctx, org.ID, selectedNetworks, cfg.IPAddress)
+		if err != nil {
+			exitWithError(log, fmt.Sprintf("Failed to resolve IP %s: %v", cfg.IPAddress, err))
+		}
 
-log.Debugf("Resolved IP %s to MAC %s (hostname: %s)", cfg.IPAddress, resolvedMAC, resolvedHostname)
+		log.Debugf("Resolved IP %s to MAC %s (hostname: %s)", cfg.IPAddress, resolvedMAC, resolvedHostname)
 
-// Create matcher for the resolved MAC
-matcher, _, _, err = macaddr.BuildMacMatcher(resolvedMAC)
-if err != nil {
-exitWithError(log, err.Error())
-}
+		// Create matcher for the resolved MAC
+		matcher, _, _, err = macaddr.BuildMacMatcher(resolvedMAC)
+		if err != nil {
+			exitWithError(log, err.Error())
+		}
 
-} else if strings.TrimSpace(*macFlag) != "" {
-// MAC mode (existing logic)
-var normalized string
-var isWildcard bool
-var err error
-matcher, normalized, isWildcard, err = macaddr.BuildMacMatcher(*macFlag)
-if err != nil {
-exitWithError(log, err.Error())
-}
-if isWildcard {
-log.Debugf("MAC pattern: %s", strings.TrimSpace(*macFlag))
-} else {
-log.Debugf("MAC: %s", normalized)
-}
-}
+	} else if strings.TrimSpace(*macFlag) != "" {
+		// MAC mode (existing logic)
+		var normalized string
+		var isWildcard bool
+		var err error
+		matcher, normalized, isWildcard, err = macaddr.BuildMacMatcher(*macFlag)
+		if err != nil {
+			exitWithError(log, err.Error())
+		}
+		if isWildcard {
+			log.Debugf("MAC pattern: %s", strings.TrimSpace(*macFlag))
+		} else {
+			log.Debugf("MAC: %s", normalized)
+		}
+	}
 
-var results []output.ResultRow
-resultsIndex := make(map[string]struct{})
-var cliAggrCache map[string]map[string][]string
-for _, net := range selectedNetworks {
-log.Debugf("Network: %s", net.Name)
+	var results []output.ResultRow
+	resultsIndex := make(map[string]struct{})
+	var cliAggrCache map[string]map[string][]string
+	for _, net := range selectedNetworks {
+		log.Debugf("Network: %s", net.Name)
 
-// Get all devices for this network
-devices, err := client.GetDevices(ctx, net.ID)
-if err != nil {
-exitWithError(log, err.Error())
-}
+		// Get all devices for this network
+		devices, err := client.GetDevices(ctx, net.ID)
+		if err != nil {
+			exitWithError(log, err.Error())
+		}
 
-// Build device lookup map
-deviceBySerial := make(map[string]meraki.Device)
-for _, dev := range devices {
-deviceBySerial[dev.Serial] = dev
-}
+		// Build device lookup map
+		deviceBySerial := make(map[string]meraki.Device)
+		for _, dev := range devices {
+			deviceBySerial[dev.Serial] = dev
+		}
 
-// Filter to switches only
-switches := filters.FilterSwitches(devices)
-switches = filters.FilterSwitchesByName(switches, cfg.SwitchFilter)
+		// Filter to switches only
+		switches := filters.FilterSwitches(devices)
+		switches = filters.FilterSwitchesByName(switches, cfg.SwitchFilter)
 
-// Fetch topology to identify true uplink ports; failure is non-fatal.
-// Pre-populate AGGR cache from network-level link aggregations API (reliable source for AGGR/N membership).
-cliAggrCache = client.GetNetworkLinkAggregations(ctx, net.ID)
-// Build uplink set using LLDP/CDP per switch (topology API lacks port IDs on this firmware).
-cliUplinkPortCache := make(map[string]map[string]struct{})
-cliGetUplinkPorts := func(serial string) map[string]struct{} {
-if _, ok := cliUplinkPortCache[serial]; !ok {
-cliUplinkPortCache[serial] = client.GetDeviceUplinkPorts(ctx, serial)
-}
-return cliUplinkPortCache[serial]
-}
+		// Fetch topology to identify true uplink ports; failure is non-fatal.
+		// Pre-populate AGGR cache from network-level link aggregations API (reliable source for AGGR/N membership).
+		cliAggrCache = client.GetNetworkLinkAggregations(ctx, net.ID)
+		// Build uplink set using LLDP/CDP per switch (topology API lacks port IDs on this firmware).
+		cliUplinkPortCache := make(map[string]map[string]struct{})
+		cliGetUplinkPorts := func(serial string) map[string]struct{} {
+			if _, ok := cliUplinkPortCache[serial]; !ok {
+				cliUplinkPortCache[serial] = client.GetDeviceUplinkPorts(ctx, serial)
+			}
+			return cliUplinkPortCache[serial]
+		}
 
-// Query network-level clients
-networkClients, err := client.GetNetworkClients(ctx, net.ID)
-if err != nil {
-exitWithError(log, err.Error())
-}
-log.Debugf("Network clients API returned %d clients", len(networkClients))
+		// Query network-level clients
+		networkClients, err := client.GetNetworkClients(ctx, net.ID)
+		if err != nil {
+			exitWithError(log, err.Error())
+		}
+		log.Debugf("Network clients API returned %d clients", len(networkClients))
 
-// Build MAC→IP/hostname/lastSeen maps for enriching results from live table / device clients.
-macToIP := make(map[string]string, len(networkClients))
-macToLastSeen := make(map[string]string, len(networkClients))
-macToHostname := make(map[string]string, len(networkClients))
-for _, nc := range networkClients {
-norm, err2 := macaddr.NormalizeExactMac(nc.MAC)
-if err2 != nil {
-continue
-}
-if nc.IP != "" {
-macToIP[norm] = nc.IP
-}
-if nc.LastSeen != "" {
-if existing := macToLastSeen[norm]; existing == "" || nc.LastSeen > existing {
-macToLastSeen[norm] = nc.LastSeen
-}
-}
-if hn := meraki.ClientHostname(nc); hn != "" {
-macToHostname[norm] = hn
-}
-}
+		// Build MAC→IP/hostname/lastSeen maps for enriching results from live table / device clients.
+		macToIP := make(map[string]string, len(networkClients))
+		macToLastSeen := make(map[string]string, len(networkClients))
+		macToHostname := make(map[string]string, len(networkClients))
+		for _, nc := range networkClients {
+			norm, err2 := macaddr.NormalizeExactMac(nc.MAC)
+			if err2 != nil {
+				continue
+			}
+			if nc.IP != "" {
+				macToIP[norm] = nc.IP
+			}
+			if nc.LastSeen != "" {
+				if existing := macToLastSeen[norm]; existing == "" || nc.LastSeen > existing {
+					macToLastSeen[norm] = nc.LastSeen
+				}
+			}
+			if hn := meraki.ClientHostname(nc); hn != "" {
+				macToHostname[norm] = hn
+			}
+		}
 
-// ipAndHostname returns the IP (and reverse-DNS hostname in MAC mode) for a
-// normalized MAC. If not found in macToIP, performs a live ARP table lookup
-// on the switch (serial) where the MAC was found, caching results per switch.
-// In IP mode the hostname is already in resolvedHostname.
-serialArpCache := make(map[string]map[string]string)
-ipAndHostname := func(normMAC, knownIP, serial string) (string, string) {
-ip := knownIP
-if ip == "" {
-ip = macToIP[normMAC]
-}
-// Fallback: live ARP table lookup on the specific switch
-if ip == "" && serial != "" {
-if _, cached := serialArpCache[serial]; !cached {
-serialArpCache[serial] = client.FetchArpMap(ctx, serial, cfg.MacTablePoll)
-}
-ip = serialArpCache[serial][normMAC]
-}
-hn := resolvedHostname // pre-set in IP mode
-if hn == "" {
-hn = macToHostname[normMAC]
-}
-if hn == "" && ip != "" {
-if hn = meraki.LookupHostOverride(ip, org.Name, net.Name); hn == "" {
-hn, _ = meraki.ResolveHostname(ip)
-}
-}
-return ip, hn
-}
+		// ipAndHostname returns the IP (and reverse-DNS hostname in MAC mode) for a
+		// normalized MAC. If not found in macToIP, performs a live ARP table lookup
+		// on the switch (serial) where the MAC was found, caching results per switch.
+		// In IP mode the hostname is already in resolvedHostname.
+		serialArpCache := make(map[string]map[string]string)
+		ipAndHostname := func(normMAC, knownIP, serial string) (string, string) {
+			ip := knownIP
+			if ip == "" {
+				ip = macToIP[normMAC]
+			}
+			// Fallback: live ARP table lookup on the specific switch
+			if ip == "" && serial != "" {
+				if _, cached := serialArpCache[serial]; !cached {
+					serialArpCache[serial] = client.FetchArpMap(ctx, serial, cfg.MacTablePoll)
+				}
+				ip = serialArpCache[serial][normMAC]
+			}
+			hn := resolvedHostname // pre-set in IP mode
+			if hn == "" {
+				hn = macToHostname[normMAC]
+			}
+			if hn == "" && ip != "" {
+				if hn = meraki.LookupHostOverride(ip, org.Name, net.Name); hn == "" {
+					hn, _ = meraki.ResolveHostname(ip)
+				}
+			}
+			return ip, hn
+		}
 
-for _, c := range networkClients {
-normMAC, err := macaddr.NormalizeExactMac(c.MAC)
-if err != nil {
-continue
-}
-if matcher(normMAC) {
-serial := strings.TrimSpace(c.RecentDeviceSerial)
-if serial == "" {
-continue
-}
+		for _, c := range networkClients {
+			normMAC, err := macaddr.NormalizeExactMac(c.MAC)
+			if err != nil {
+				continue
+			}
+			if matcher(normMAC) {
+				serial := strings.TrimSpace(c.RecentDeviceSerial)
+				if serial == "" {
+					continue
+				}
 
-dev := deviceBySerial[serial]
-switchName := firstNonEmpty(dev.Name, c.RecentDeviceName, serial)
+				dev := deviceBySerial[serial]
+				switchName := firstNonEmpty(dev.Name, c.RecentDeviceName, serial)
 
-if !filters.MatchesSwitchFilter(switchName, cfg.SwitchFilter) {
-if cfg.Verbose {
-log.Debugf("Network client %s filtered out by switch filter (switch=%s, filter=%s)",
-macaddr.FormatMacColon(normMAC), switchName, cfg.SwitchFilter)
-}
-continue
-}
+				if !filters.MatchesSwitchFilter(switchName, cfg.SwitchFilter) {
+					if cfg.Verbose {
+						log.Debugf("Network client %s filtered out by switch filter (switch=%s, filter=%s)",
+							macaddr.FormatMacColon(normMAC), switchName, cfg.SwitchFilter)
+					}
+					continue
+				}
 
-port := firstNonEmpty(c.SwitchportName, c.Switchport, c.Port, "unknown")
-if !filters.MatchesPortFilter(port, cfg.PortFilter) {
-continue
-}
+				port := firstNonEmpty(c.SwitchportName, c.Switchport, c.Port, "unknown")
+				if !filters.MatchesPortFilter(port, cfg.PortFilter) {
+					continue
+				}
 
-if cfg.Verbose {
-log.Debugf("Adding network client %s on %s port %s", macaddr.FormatMacColon(normMAC), switchName, port)
-}
+				if cfg.Verbose {
+					log.Debugf("Adding network client %s on %s port %s", macaddr.FormatMacColon(normMAC), switchName, port)
+				}
 
-aggrMembers := resolveAggrPorts(ctx, client, serial, port, cliAggrCache)
-vlan, portMode := enrichPortInfoWithMembers(ctx, client, serial, port, aggrMembers, 0, "")
+				aggrMembers := resolveAggrPorts(ctx, client, serial, port, cliAggrCache)
+				vlan, portMode := enrichPortInfoWithMembers(ctx, client, serial, port, aggrMembers, 0, "")
 
-ip, hn := ipAndHostname(normMAC, c.IP, serial)
-addResult(resultsIndex, &results, output.ResultRow{
-OrgName:      org.Name,
-NetworkName:  net.Name,
-SwitchName:   switchName,
-SwitchSerial: serial,
-Port:         port,
-AggrPorts:    aggrMembers,
-MAC:          macaddr.FormatMacColon(normMAC),
-IP:           ip,
-Hostname:     hn,
-LastSeen:     firstNonEmpty(c.LastSeen, macToLastSeen[normMAC]),
-VLAN:         vlan,
-PortMode:     portMode,
-IsUplink:     isPortUplink(port, aggrMembers, cliGetUplinkPorts(serial)),
-})
-}
-}
+				ip, hn := ipAndHostname(normMAC, c.IP, serial)
+				addResult(resultsIndex, &results, output.ResultRow{
+					OrgName:      org.Name,
+					NetworkName:  net.Name,
+					SwitchName:   switchName,
+					SwitchSerial: serial,
+					Port:         port,
+					AggrPorts:    aggrMembers,
+					MAC:          macaddr.FormatMacColon(normMAC),
+					IP:           ip,
+					Hostname:     hn,
+					LastSeen:     firstNonEmpty(c.LastSeen, macToLastSeen[normMAC]),
+					VLAN:         vlan,
+					PortMode:     portMode,
+					IsUplink:     isPortUplink(port, aggrMembers, cliGetUplinkPorts(serial)),
+				})
+			}
+		}
 
-// Query device-level clients for each switch
-for _, dev := range switches {
-log.Debugf("Querying switch: %s (%s)", firstNonEmpty(dev.Name, dev.Serial), dev.Serial)
+		// Query device-level clients for each switch
+		for _, dev := range switches {
+			log.Debugf("Querying switch: %s (%s)", firstNonEmpty(dev.Name, dev.Serial), dev.Serial)
 
-// Try live tools MAC table lookup first (works for all switches including Catalyst)
-macTableID, err := client.CreateMacTableLookup(ctx, dev.Serial)
-if err == nil && macTableID != "" {
-if cfg.Verbose {
-log.Debugf("Created MAC table lookup job %s for %s", macTableID, dev.Serial)
-}
+			// Try live tools MAC table lookup first (works for all switches including Catalyst)
+			macTableID, err := client.CreateMacTableLookup(ctx, dev.Serial)
+			if err == nil && macTableID != "" {
+				if cfg.Verbose {
+					log.Debugf("Created MAC table lookup job %s for %s", macTableID, dev.Serial)
+				}
 
-// Poll for results (max 30 seconds)
-var macEntries []map[string]interface{}
-var status string
-for attempt := 0; attempt < cfg.MacTablePoll; attempt++ {
-time.Sleep(2 * time.Second)
-macEntries, status, err = client.GetMacTableLookup(ctx, dev.Serial, macTableID)
-if err != nil {
-if cfg.Verbose {
-log.Debugf("Error getting MAC table lookup for %s (%s) in network %s: %v",
-firstNonEmpty(dev.Name, dev.Serial), dev.Serial, net.Name, err)
-}
-break
-}
-if status == "complete" {
-break
-}
-if cfg.Verbose {
-log.Debugf("MAC table lookup status for %s (%s) in network %s: %s (attempt %d/%d)",
-firstNonEmpty(dev.Name, dev.Serial), dev.Serial, net.Name, status, attempt+1, cfg.MacTablePoll)
-}
-}
+				// Poll for results (max 30 seconds)
+				var macEntries []map[string]interface{}
+				var status string
+				for attempt := 0; attempt < cfg.MacTablePoll; attempt++ {
+					time.Sleep(2 * time.Second)
+					macEntries, status, err = client.GetMacTableLookup(ctx, dev.Serial, macTableID)
+					if err != nil {
+						if cfg.Verbose {
+							log.Debugf("Error getting MAC table lookup for %s (%s) in network %s: %v",
+								firstNonEmpty(dev.Name, dev.Serial), dev.Serial, net.Name, err)
+						}
+						break
+					}
+					if status == "complete" {
+						break
+					}
+					if cfg.Verbose {
+						log.Debugf("MAC table lookup status for %s (%s) in network %s: %s (attempt %d/%d)",
+							firstNonEmpty(dev.Name, dev.Serial), dev.Serial, net.Name, status, attempt+1, cfg.MacTablePoll)
+					}
+				}
 
-if status == "complete" && len(macEntries) > 0 {
-log.Debugf("Live MAC table returned %d entries for %s", len(macEntries), firstNonEmpty(dev.Name, dev.Serial))
+				if status == "complete" && len(macEntries) > 0 {
+					log.Debugf("Live MAC table returned %d entries for %s", len(macEntries), firstNonEmpty(dev.Name, dev.Serial))
 
-foundInTable := false
-for _, entry := range macEntries {
-macStr, _ := entry["mac"].(string)
-if macStr == "" {
-continue
-}
+					foundInTable := false
+					for _, entry := range macEntries {
+						macStr, _ := entry["mac"].(string)
+						if macStr == "" {
+							continue
+						}
 
-normMAC, err := macaddr.NormalizeExactMac(macStr)
-if err != nil {
-continue
-}
+						normMAC, err := macaddr.NormalizeExactMac(macStr)
+						if err != nil {
+							continue
+						}
 
-if matcher(normMAC) {
-// Try different field names for port
-portID, _ := entry["portId"].(string)
-if portID == "" {
-portID, _ = entry["port"].(string)
-}
-if portID == "" {
-portID, _ = entry["interface"].(string)
-}
-vlan, _ := entry["vlan"].(float64)
-portMode, _ := entry["type"].(string) // "access" or "trunk"
+						if matcher(normMAC) {
+							// Try different field names for port
+							portID, _ := entry["portId"].(string)
+							if portID == "" {
+								portID, _ = entry["port"].(string)
+							}
+							if portID == "" {
+								portID, _ = entry["interface"].(string)
+							}
+							vlan, _ := entry["vlan"].(float64)
+							portMode, _ := entry["type"].(string) // "access" or "trunk"
 
-if cfg.Verbose && portID == "" {
-log.Debugf("MAC entry fields: %+v", entry)
-}
+							if cfg.Verbose && portID == "" {
+								log.Debugf("MAC entry fields: %+v", entry)
+							}
 
-// Normalize AGGR raw strings (e.g. "AGGR/0=serial/49,...") to clean ID
-cleanPortID, aggrMembers := parseAggrPort(firstNonEmpty(portID, "unknown"))
-port := cleanPortID
-if !filters.MatchesPortFilter(port, cfg.PortFilter) {
-continue
-}
+							// Normalize AGGR raw strings (e.g. "AGGR/0=serial/49,...") to clean ID
+							cleanPortID, aggrMembers := parseAggrPort(firstNonEmpty(portID, "unknown"))
+							port := cleanPortID
+							if !filters.MatchesPortFilter(port, cfg.PortFilter) {
+								continue
+							}
 
-// If not already parsed from the raw string, try API/cache lookup
-if aggrMembers == nil {
-aggrMembers = resolveAggrPorts(ctx, client, dev.Serial, port, cliAggrCache)
-}
+							// If not already parsed from the raw string, try API/cache lookup
+							if aggrMembers == nil {
+								aggrMembers = resolveAggrPorts(ctx, client, dev.Serial, port, cliAggrCache)
+							}
 
-// Enrich with switch port API (authoritative VLAN + mode); for AGGR use first member
-richVLAN, richMode := enrichPortInfoWithMembers(ctx, client, dev.Serial, port, aggrMembers, int(vlan), portMode)
+							// Enrich with switch port API (authoritative VLAN + mode); for AGGR use first member
+							richVLAN, richMode := enrichPortInfoWithMembers(ctx, client, dev.Serial, port, aggrMembers, int(vlan), portMode)
 
-if cfg.Verbose {
-log.Debugf("Found MAC %s on %s port %s (VLAN %d, mode=%s) via live lookup",
-macaddr.FormatMacColon(normMAC), firstNonEmpty(dev.Name, dev.Serial), port, richVLAN, richMode)
-}
+							if cfg.Verbose {
+								log.Debugf("Found MAC %s on %s port %s (VLAN %d, mode=%s) via live lookup",
+									macaddr.FormatMacColon(normMAC), firstNonEmpty(dev.Name, dev.Serial), port, richVLAN, richMode)
+							}
 
-ip, hn := ipAndHostname(normMAC, "", dev.Serial)
-_, isUplink := cliGetUplinkPorts(dev.Serial)[port]
-addResult(resultsIndex, &results, output.ResultRow{
-OrgName:      org.Name,
-NetworkName:  net.Name,
-SwitchName:   firstNonEmpty(dev.Name, dev.Serial),
-SwitchSerial: dev.Serial,
-Port:         port,
-AggrPorts:    aggrMembers,
-MAC:          macaddr.FormatMacColon(normMAC),
-IP:           ip,
-Hostname:     hn,
-LastSeen:     macToLastSeen[normMAC],
-VLAN:         richVLAN,
-PortMode:     richMode,
-IsUplink:     isUplink,
-})
-foundInTable = true
-}
-}
-// Only skip device-clients fallback if the target MAC was actually found in the table.
-// If the table had entries but our MAC wasn't present (device temporarily inactive),
+							ip, hn := ipAndHostname(normMAC, "", dev.Serial)
+							_, isUplink := cliGetUplinkPorts(dev.Serial)[port]
+							addResult(resultsIndex, &results, output.ResultRow{
+								OrgName:      org.Name,
+								NetworkName:  net.Name,
+								SwitchName:   firstNonEmpty(dev.Name, dev.Serial),
+								SwitchSerial: dev.Serial,
+								Port:         port,
+								AggrPorts:    aggrMembers,
+								MAC:          macaddr.FormatMacColon(normMAC),
+								IP:           ip,
+								Hostname:     hn,
+								LastSeen:     macToLastSeen[normMAC],
+								VLAN:         richVLAN,
+								PortMode:     richMode,
+								IsUplink:     isUplink,
+							})
+							foundInTable = true
+						}
+					}
+					// Only skip device-clients fallback if the target MAC was actually found in the table.
+					// If the table had entries but our MAC wasn't present (device temporarily inactive),
 					// fall through so device clients history can still surface the result.
 					if foundInTable {
 						continue // Skip device clients API
@@ -601,9 +601,9 @@ foundInTable = true
 	}
 
 	sort.Slice(results, func(i, j int) bool {
-if results[i].NetworkName == results[j].NetworkName {
-if results[i].SwitchName == results[j].SwitchName {
-return results[i].Port < results[j].Port
+		if results[i].NetworkName == results[j].NetworkName {
+			if results[i].SwitchName == results[j].SwitchName {
+				return results[i].Port < results[j].Port
 			}
 			return results[i].SwitchName < results[j].SwitchName
 		}
@@ -700,8 +700,8 @@ func selectNetworks(name string, networks []meraki.Network) ([]meraki.Network, e
 // addResult adds a result row to the results slice if it's not a duplicate.
 // Deduplication is based on switch serial, port, MAC address, and last seen timestamp.
 func addResult(index map[string]struct{}, rows *[]output.ResultRow, row output.ResultRow) {
-// Key on serial+port+MAC only (not LastSeen) so network-clients and MAC-table
-// results for the same port don't both appear as separate rows.
+	// Key on serial+port+MAC only (not LastSeen) so network-clients and MAC-table
+	// results for the same port don't both appear as separate rows.
 	key := fmt.Sprintf("%s|%s|%s", row.SwitchSerial, row.Port, row.MAC)
 	if _, exists := index[key]; exists {
 		return
