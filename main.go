@@ -953,31 +953,35 @@ func handleTestGetNetworks(w http.ResponseWriter, r *http.Request) {
 }
 
 // testDemoResults returns a realistic set of demo results for a single MAC
-// address found within one network.  A MAC is burned into hardware — it lives
-// on exactly one access port (the switch the device is physically plugged
-// into).  That same MAC then appears in the MAC table of every upstream
-// switch as the frame travels toward the core, but always on an uplink/trunk
-// port.  The topology here is:
+// address.  A MAC is burned into hardware — it lives on exactly one access
+// port (the switch the device is physically plugged into).  That same MAC
+// then appears in the MAC table of every upstream switch as the frame
+// travels toward the core, always on an uplink/trunk port.
 //
-//	laptop → MS355 edge (access port 12, VLAN 100)
-//	       → MS450 distribution (AGGR/0 uplink, ports 49+50)
-//	       → C9300 core (uplink port 25)
+// HQ Campus (3 hops — device lives here):
+//
+//	laptop → sw-hq-access-ms355  port 12   (access)
+//	       → sw-hq-dist-ms450    AGGR/0    (uplink, ports 49+50)
+//	       → sw-hq-core-c9300    port 25   (uplink)
+//
+// Warehouse and City Parks share the same WAN/VPN infrastructure so the
+// MAC is visible on their border/uplink ports — uplink hits only, no
+// access port, because the device is not physically present there.
 func testDemoResults(mac string) []map[string]interface{} {
 	if mac == "" {
 		mac = "a4:c3:f0:85:1d:3e"
 	}
 	const org = "Acme Corporation"
-	const net = "HQ Campus"
 	const ip = "10.10.1.42"
 	const hostname = "laptop-jsmith.acme.local"
 	const lastSeen = "2026-03-02T14:23:00Z"
 	const mfr = "Apple"
 	const vlan = 100
 	return []map[string]interface{}{
-		// ── Layer 1: edge MS355 — device is physically plugged in here ────────
+		// ── HQ Campus layer 1: edge MS355 — device physically plugged in here ─
 		{
 			"orgName":      org,
-			"networkName":  net,
+			"networkName":  "HQ Campus",
 			"deviceName":   "sw-hq-access-ms355",
 			"deviceSerial": "Q2HP-XXXX-0001",
 			"port":         "12",
@@ -991,10 +995,10 @@ func testDemoResults(mac string) []map[string]interface{} {
 			"portMode":     "access",
 			"isUplink":     false,
 		},
-		// ── Layer 2: distribution MS450 — MAC seen on AGGR uplink to core ────
+		// ── HQ Campus layer 2: distribution MS450 — AGGR uplink to core ───────
 		{
 			"orgName":      org,
-			"networkName":  net,
+			"networkName":  "HQ Campus",
 			"deviceName":   "sw-hq-dist-ms450",
 			"deviceSerial": "Q2EK-XXXX-0002",
 			"port":         "AGGR/0",
@@ -1008,12 +1012,48 @@ func testDemoResults(mac string) []map[string]interface{} {
 			"portMode":     "trunk",
 			"isUplink":     true,
 		},
-		// ── Layer 3: C9300 core — MAC seen on uplink port toward router ───────
+		// ── HQ Campus layer 3: C9300 core — uplink toward router ──────────────
 		{
 			"orgName":      org,
-			"networkName":  net,
+			"networkName":  "HQ Campus",
 			"deviceName":   "sw-hq-core-c9300",
 			"deviceSerial": "FCW-XXXX-0003",
+			"port":         "25",
+			"aggrPorts":    nil,
+			"mac":          mac,
+			"ip":           ip,
+			"hostname":     hostname,
+			"lastSeen":     lastSeen,
+			"manufacturer": mfr,
+			"vlan":         vlan,
+			"portMode":     "trunk",
+			"isUplink":     true,
+		},
+		// ── Warehouse: uplink-only hit on border MS355 ─────────────────────────
+		// The device is not physically here; MAC appears in the forwarding table
+		// on the WAN uplink port only (traffic routed back to HQ Campus).
+		{
+			"orgName":      org,
+			"networkName":  "Warehouse",
+			"deviceName":   "sw-wh-border-ms355",
+			"deviceSerial": "Q2HP-XXXX-0004",
+			"port":         "49",
+			"aggrPorts":    nil,
+			"mac":          mac,
+			"ip":           ip,
+			"hostname":     hostname,
+			"lastSeen":     lastSeen,
+			"manufacturer": mfr,
+			"vlan":         vlan,
+			"portMode":     "trunk",
+			"isUplink":     true,
+		},
+		// ── City Parks: uplink-only hit on C9300 WAN uplink ───────────────────
+		{
+			"orgName":      org,
+			"networkName":  "City Parks",
+			"deviceName":   "sw-parks-c9300-border",
+			"deviceSerial": "FCW-XXXX-0005",
 			"port":         "25",
 			"aggrPorts":    nil,
 			"mac":          mac,
@@ -1039,6 +1079,36 @@ func handleTestResolve(w http.ResponseWriter, r *http.Request) {
 	if mac == "" {
 		mac = "a4:c3:f0:85:1d:3e"
 	}
+
+	// Emit realistic log messages over WebSocket to simulate a live scan.
+	log := func(msg string) {
+		wsLogHub.broadcast(msg)
+		time.Sleep(120 * time.Millisecond)
+	}
+
+	log(fmt.Sprintf("[INFO] Starting MAC lookup for %s across all networks", mac))
+	log("[INFO] Fetching organization list from Acme Corporation")
+	log("[INFO] Found 4 networks: HQ Campus, Warehouse, City Parks, Remote Office")
+
+	log("[INFO] [HQ Campus] Scanning 3 switches...")
+	log(fmt.Sprintf("[INFO] [HQ Campus] sw-hq-access-ms355 — MAC %s found on port 12 (access, VLAN 100)", mac))
+	log(fmt.Sprintf("[INFO] [HQ Campus] sw-hq-dist-ms450 — MAC %s found on AGGR/0 (uplink, ports 49+50)", mac))
+	log(fmt.Sprintf("[INFO] [HQ Campus] sw-hq-core-c9300 — MAC %s found on port 25 (uplink)", mac))
+
+	log("[INFO] [Warehouse] Scanning 2 switches...")
+	log("[DEBUG] [Warehouse] sw-wh-c9300-floor — MAC not found")
+	log(fmt.Sprintf("[INFO] [Warehouse] sw-wh-border-ms355 — MAC %s found on port 49 (uplink)", mac))
+
+	log("[INFO] [City Parks] Scanning 3 switches...")
+	log("[DEBUG] [City Parks] sw-parks-ms355-01 — MAC not found")
+	log("[DEBUG] [City Parks] sw-parks-ms355-02 — MAC not found")
+	log(fmt.Sprintf("[INFO] [City Parks] sw-parks-c9300-border — MAC %s found on port 25 (uplink)", mac))
+
+	log("[INFO] [Remote Office] Scanning 1 switch...")
+	log("[DEBUG] [Remote Office] sw-remote-ms355-01 — MAC not found")
+
+	log(fmt.Sprintf("[INFO] Lookup complete — 5 result(s) found for %s", mac))
+
 	results := testDemoResults(mac)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"results": results})
 }
