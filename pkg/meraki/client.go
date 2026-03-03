@@ -823,8 +823,10 @@ type LLDPCDPData struct {
 
 // GetDeviceUplinkPorts returns the set of port IDs on the given device that are
 // confirmed switch-to-switch uplinks — i.e. ports where the LLDP/CDP neighbor
-// is a switch (CDP capabilities contains "Switch" and neighbor has a Meraki
-// dashboard URL). APs and other non-switch Meraki devices are excluded.
+// advertises switch capabilities (CDP "capabilities" contains "Switch", or LLDP
+// "systemCapabilities" contains "S-VLAN" or "Bridge"). Non-switch Meraki devices
+// such as APs (which only advertise "Router" or "Two-port MAC Relay") are excluded.
+// Third-party switches are included — the Meraki dashboard URL is not required.
 // Returns an empty set (never nil) on error.
 func (m *MerakiClient) GetDeviceUplinkPorts(ctx context.Context, serial string) map[string]struct{} {
 	path := fmt.Sprintf("/devices/%s/lldpCdp", serial)
@@ -869,17 +871,8 @@ func (m *MerakiClient) GetDeviceUplinkPorts(ctx context.Context, serial string) 
 				}
 			}
 		}
-		if !isSwitchNeighbor {
-			continue
-		}
-		// Confirm it's a Meraki-managed device via device.url.
-		if devRaw, ok := portData["device"]; ok {
-			var dev struct {
-				URL string `json:"url"`
-			}
-			if json.Unmarshal(devRaw, &dev) == nil && strings.Contains(dev.URL, "meraki.com") {
-				uplinks[portID] = struct{}{}
-			}
+		if isSwitchNeighbor {
+			uplinks[portID] = struct{}{}
 		}
 	}
 	return uplinks
