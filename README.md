@@ -3,7 +3,7 @@
 [![Tests](https://github.com/bci/Find-Meraki-Ports-With-MAC/workflows/Tests/badge.svg)](https://github.com/bci/Find-Meraki-Ports-With-MAC/actions)
 [![Go Report Card](https://goreportcard.com/badge/github.com/bci/Find-Meraki-Ports-With-MAC)](https://goreportcard.com/report/github.com/bci/Find-Meraki-Ports-With-MAC)
 [![codecov](https://codecov.io/gh/bci/Find-Meraki-Ports-With-MAC/branch/main/graph/badge.svg)](https://codecov.io/gh/bci/Find-Meraki-Ports-With-MAC)
-[![License: Unlicense](https://img.shields.io/badge/license-Unlicense-blue.svg)](http://unlicense.org/)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![GitHub release](https://img.shields.io/github/release/bci/Find-Meraki-Ports-With-MAC.svg)](https://github.com/bci/Find-Meraki-Ports-With-MAC/releases)
 
 A Go CLI tool that queries the Meraki Dashboard API to find which switch and port a MAC address or IP address is associated with. Supports both Meraki MS switches and Cisco Catalyst switches managed by Meraki.
@@ -319,7 +319,9 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 
-This is free and unencumbered software released into the public domain. See the [UNLICENSE](UNLICENSE) file for details.
+This program is free software: you can redistribute it and/or modify it under the terms of the
+[GNU General Public License v3.0](LICENSE) as published by the Free Software Foundation.
+See the [LICENSE](LICENSE) file for details.
 
 ## Authors
 
