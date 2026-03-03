@@ -339,7 +339,7 @@ class App {
       case 'vlan':         return String(r.vlan || '').toLowerCase();
       case 'hostname':     return (r.hostname || '').toLowerCase();
       case 'manufacturer': return (r.manufacturer || '').toLowerCase();
-      case 'mode':         return (r.portMode || '').toLowerCase();
+      case 'mode':         return r.isUplink ? 'uplink' : (r.portMode || '').toLowerCase();
       default:             return '';
     }
   }
@@ -482,30 +482,16 @@ class App {
     const trunkOnlyResults = sorted.filter(r => !r.isUplink && r.portMode === 'trunk' && !(r.port || '').startsWith('AGGR'));
 
     if (uplinkResults.length > 0) {
-      const items = uplinkResults.map(r =>
-        '<li><strong>' + this._esc(r.deviceName || r.switchName || r.deviceSerial || '—') +
-        '</strong> — port <code>' + this._esc(r.port || '—') + '</code>' +
-        (r.networkName ? ' <span style="opacity:.6">('+this._esc(r.networkName)+')</span>' : '') +
-        '</li>'
-      ).join('');
       noteEl.innerHTML =
-        '<strong>&#9650; Uplink detected:</strong> The following port' + (uplinkResults.length > 1 ? 's are' : ' is') +
+        '<strong>&#9650; Uplink detected:</strong> ' +
+        (uplinkResults.length > 1 ? 'These ports are' : 'This port is') +
         ' a confirmed inter-switch uplink according to the Meraki link-layer topology.' +
-        ' The MAC address belongs to a device further upstream — this switch is not the access point.' +
-        '<ul>' + items + '</ul>';
+        ' The MAC address belongs to a device further upstream — this switch is not the access point.';
       noteEl.classList.remove('hidden');
     } else if (trunkOnlyResults.length > 0) {
-      const items = trunkOnlyResults.map(r =>
-        '<li><strong>' + this._esc(r.deviceName || r.switchName || r.deviceSerial || '—') +
-        '</strong> — port <code>' + this._esc(r.port || '—') + '</code>' +
-        (r.networkName ? ' <span style="opacity:.6">('+this._esc(r.networkName)+')</span>' : '') +
-        '</li>'
-      ).join('');
       noteEl.innerHTML =
-        '<strong>&#9432; Note:</strong> The following switch' + (trunkOnlyResults.length > 1 ? 'es' : '') +
-        ' found this MAC on a <em>trunk</em> port (carries multiple VLANs). ' +
-        'This may be an uplink, a multi-VLAN device (phone, AP, server), or a misconfigured port.' +
-        '<ul>' + items + '</ul>';
+        '<strong>&#9432; Note:</strong> This MAC was found on a <em>trunk</em> port (carries multiple VLANs). ' +
+        'This may be an uplink, a multi-VLAN device (phone, AP, server), or a misconfigured port.';
       noteEl.classList.remove('hidden');
     }
   }
