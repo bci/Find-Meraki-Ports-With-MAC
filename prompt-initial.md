@@ -375,19 +375,29 @@ The project uses a modular architecture with reusable packages:
 
 ```
 Find-Meraki-Ports-With-MAC/
-├── main.go                      # CLI entry point and orchestration
+├── main.go                      # CLI entry point, Config struct, flag parsing, utilities
+├── web.go                       # WebSocket log hub, startWebServer, openBrowser, handleHome
+├── web_handlers.go              # Real Meraki API HTTP handlers (validate, resolve, topology, debug)
+├── web_demo.go                  # --test-data demo constants and mock handlers
+├── resolve.go                   # resolveDevices, processSwitchesForResolution, AGGR/uplink helpers
+├── oui.go                       # OUI vendor lookup cache (api.macvendors.com)
 ├── main_test.go                 # Tests for main.go helper functions
+├── resolve_test.go              # Tests for resolve.go (parseAggrPort, isPortUplink, resolveAggrPorts)
 ├── go.mod                       # Go module definition
 ├── go.sum                       # Dependency checksums
 ├── .env.example                 # Environment variable template
 ├── .env                         # User's environment (git-ignored)
 ├── .gitignore                   # Git ignore rules
 ├── README.md                    # User documentation
-├── PROMPT.md                    # This specification
 ├── build.ps1                    # PowerShell build script (Windows)
 ├── build.sh                     # Bash build script (Unix)
 ├── Makefile                     # Make build targets
 ├── bin/                         # Build output directory (git-ignored)
+├── static/                      # Web UI static assets
+│   ├── css/
+│   │   └── style.css            # All styles; no external CSS imports
+│   └── js/
+│       └── app.js               # Complete App class; no framework
 ├── .github/
 │   ├── workflows/
 │   │   └── test.yml             # CI/CD workflow for automated testing
@@ -397,9 +407,10 @@ Find-Meraki-Ports-With-MAC/
     │   ├── macaddr.go           # Normalization, formatting, pattern matching
     │   └── macaddr_test.go      # Unit tests for MAC utilities
     ├── meraki/                  # Meraki Dashboard API client
-    │   └── client.go            # API methods with pagination and retry logic
+    │   ├── client.go            # API methods with pagination and retry logic
+    │   └── client_test.go       # Unit tests for host-override logic
     ├── logger/                  # Structured logging
-    │   └── logger.go            # Level-based logging with file output
+    │   └── logger.go            # Level-based logging with file and writer output
     ├── output/                  # Output formatters
     │   ├── writers.go           # CSV, Text, HTML writers
     │   └── writers_test.go      # Tests for output formats
@@ -446,14 +457,14 @@ Find-Meraki-Ports-With-MAC/
 - `MatchesPortFilter`: Port filtering logic
 - Uses pkg/meraki types
 
-### main.go Structure
+### main.go Structure (entry point only — ~420 lines)
 
-The main.go file is ~2,000 lines and includes the CLI core, web server, and all HTTP handlers.
+The main.go file is the entry point and CLI core. Web, resolve, and OUI logic live in separate files.
 
 ```go
 package main
 
-// Imports: Standard library + pkg/* + godotenv + gorilla/mux + gorilla/websocket
+// Imports: Standard library + pkg/* + godotenv
 
 // Config struct - all configuration from flags and .env
 type Config struct {
@@ -483,32 +494,75 @@ type Config struct {
 // 4. Build MAC matcher using pkg/macaddr
 // 5. Create Meraki client using pkg/meraki
 // 6. Handle --list-orgs, --list-networks, --test-api flags
-// 7. Get organization and networks
-// 8. For each network:
+// 7. If --interactive: call startWebServer() (defined in web.go)
+// 8. Get organization and networks
+// 9. For each network:
 //    - Get network clients (primary lookup)
 //    - Get devices, filter switches using pkg/filters
 //    - For each switch:
 //      - Try live MAC table lookup via pkg/meraki
 //      - Parse entries from "interface" field
 //      - If failed, fallback to device clients
-// 9. Filter by --switch, --port using pkg/filters
-// 10. Sort results
-// 11. Output using pkg/output
+// 10. Filter by --switch, --port using pkg/filters
+// 11. Sort results
+// 12. Output using pkg/output
 
-// Helper functions:
-// - firstNonEmpty: Returns first non-empty string
-// - firstNonZeroInt: Returns first non-zero int (used for MaxRetries, MacTablePoll)
-// - parseIntEnv: Parses an integer from an env var
-// - exitWithError: Logs error and exits
-// - selectOrganization: Finds org by name
-// - selectNetworks: Filters networks by name or ALL
-// - addResult: Deduplicates and adds results
-// - printUsage: Displays help text
-// - printVersion: Displays version/commit/build info
-// - writeOrganizations: Formats org list
-// - writeNetworksForOrg: Formats network list
-// - resolveDevices: Core lookup — called by both CLI and web /api/resolve handler
-// - startWebServer: Gorilla mux router, static file serving, all HTTP handlers
+// Helper functions (all in main.go):
+// - firstNonEmpty, firstNonZeroInt, parseIntEnv
+// - exitWithError, selectOrganization, selectNetworks, addResult
+// - printUsage, printVersion, writeOrganizations, writeNetworksForOrg
+```
+
+### resolve.go Structure
+
+Resolution logic called by both CLI and web `/api/resolve` handler:
+
+```go
+// resolveDevices(cfg Config, macAddr, ipAddr string) ([]output.ResultRow, error)
+// processSwitchesForResolution(ctx, client, org, network, switches, ...)
+// enrichPortInfoWithMembers(ctx, client, serial, portID, aggrMembers, ...)
+// parseAggrPort(raw string) (cleanID string, members []string)
+// resolveAggrPorts(ctx, client, serial, portID string, cache map[string]map[string][]string) []string
+// isPortUplink(portID string, aggrMembers []string, uplinkSet map[string]struct{}) bool
+```
+
+### web.go Structure
+
+```go
+// type logHub struct — WebSocket broadcast hub
+// var wsLogHub *logHub — package-level hub
+// type wsWriter struct — io.Writer that broadcasts to wsLogHub
+// newWebLogger() *logger.Logger — io.MultiWriter(os.Stderr, wsWriter{})
+// startWebServer(cfg Config, host, port string)
+// openBrowser(url string)
+// handleHome(w, r) — serves inline HTML template
+// handleWebSocketLogs(w, r) — upgrades to WebSocket, streams log hub
+```
+
+### web_handlers.go Structure
+
+```go
+// handleValidateKey, handleGetConfig, handleGetNetworks, handleResolve
+// handleGetManufacturer, handleGetAlerts, handleLogs
+// handleTopology (D3.js force-graph inline HTML page)
+// handleGetTopology, handleDebugNetwork
+```
+
+### web_demo.go Structure
+
+```go
+// Constants: demoMAC, demoIP, demoHostname, demoOrg, demoMfr, demoOUI
+// handleTestValidateKey, handleTestGetConfig, handleTestGetManufacturer
+// handleTestGetNetworks, testDemoResults(mac string) []map[string]interface{}
+// handleTestResolve — streams fake logs via goroutine + returns demo results
+```
+
+### oui.go Structure
+
+```go
+// var ouiCache sync.Map — package-level cache
+// lookupOUI(mac string) string — HTTP GET to api.macvendors.com
+// getManufacturer(mac string) string — cache wrapper
 ```
 
 ## Documentation Standards
@@ -584,6 +638,14 @@ All packages must have comprehensive unit tests:
 - TestSelectOrganization: Exact match, not found, auto-select
 - TestSelectNetworks: Single network, ALL, not found
 - TestAddResult: Deduplication logic
+- TestParseAggrPort: AGGR port ID parsing (also in resolve_test.go)
+
+**resolve_test.go:**
+- TestParseAggrPort_Resolve: Plain port, AGGR without list, AGGR with embedded members, AGGR single member
+- TestIsPortUplink: Direct uplink, AGGR member uplink, no match, empty set, nil members
+- TestResolveAggrPorts_NonAGGR: Non-AGGR returns nil
+- TestResolveAggrPorts_EmbeddedMembers: Embedded `=MAC/port` syntax parses without API call
+- TestResolveAggrPorts_CacheHit: Returns cached value without API call
 
 ### Running Tests
 
@@ -937,7 +999,7 @@ Find-Meraki-Ports-With-MAC.log
 Version information is injected at build time via `ldflags`:
 
 ```
-go build -ldflags "-X main.Version=1.2.3 -X main.Commit=$(git rev-parse --short HEAD) -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+go build -ldflags "-X main.Version=1.3.1 -X main.Commit=$(git rev-parse --short HEAD) -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ```
 
 Package-level vars (zero values shown as defaults):
@@ -948,7 +1010,7 @@ var (
     BuildTime = "unknown" // RFC3339 timestamp
     GoVersion = "go1.21"  // can be overridden at build time
 )
-const RepositoryURL = "https://github.com/BEHRConsulting/find-meraki-switch-for-mac"
+const RepositoryURL = "https://github.com/bci/Find-Meraki-Ports-With-MAC"
 ```
 
 `--version` calls `printVersion(w io.Writer)` which prints all four values plus the repository URL.
@@ -956,8 +1018,9 @@ const RepositoryURL = "https://github.com/BEHRConsulting/find-meraki-switch-for-
 ## Interactive Web UI
 
 The `--interactive` flag activates a full single-page web interface for Meraki port lookup.
-This is a substantial addition (~1,400 lines of `main.go` plus `static/`). See
-[prompt-interactive.md](prompt-interactive.md) for the complete as-built specification covering:
+This is a substantial addition spread across `web.go`, `web_handlers.go`, `web_demo.go`, and
+`static/`. See [prompt-interactive.md](prompt-interactive.md) for the complete as-built
+specification covering:
 
 - All HTTP routes and handler signatures
 - `handleGetConfig` preset fields

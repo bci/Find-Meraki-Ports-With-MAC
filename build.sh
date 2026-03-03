@@ -17,7 +17,7 @@ set -e
 unset GOOS GOARCH CGO_ENABLED 2>/dev/null || true
 
 APP_NAME="Find-Meraki-Ports-With-MAC"
-VERSION="1.3.0"
+VERSION="1.3.1"
 OUTPUT_DIR="bin"
 
 # Run unit tests

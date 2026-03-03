@@ -4,7 +4,12 @@ This document is the authoritative as-built reference for the interactive web in
 `Find-Meraki-Ports-With-MAC`. It is written in enough detail that an AI (or developer) can
 rebuild the feature from scratch without reading any source files first.
 
-Last reflected commit: `52a0387`
+Last reflected commit: `5ed7e60`
+
+> **Note (v1.3.1)**: The interactive web backend was refactored out of `main.go` into three
+> focused files — `web.go` (hub, server, home), `web_handlers.go` (real API handlers),
+> `web_demo.go` (demo/test-data handlers). The handler signatures and behaviour are unchanged;
+> only the file locations differ. `main.go` now contains only the entry point and CLI utilities.
 
 ---
 
@@ -694,8 +699,15 @@ static/
     style.css          ← all styles, no external CSS imports
   js/
     app.js             ← complete App class, no framework
-main.go                ← handleHome (inline HTML), startWebServer, all handler funcs
-                          global preset vars, handleGetConfig, handleResolve (MacTablePoll fix)
+main.go                ← entry point, Config struct, flag parsing, CLI utilities
+web.go                 ← logHub, wsLogHub, wsWriter, newWebLogger, startWebServer,
+                          openBrowser, handleHome, handleWebSocketLogs, upgrader
+web_handlers.go        ← handleValidateKey, handleGetConfig, handleGetNetworks,
+                          handleResolve, handleGetManufacturer, handleGetAlerts,
+                          handleLogs, handleTopology, handleGetTopology, handleDebugNetwork
+web_demo.go            ← demo constants (demoMAC/IP/etc.), handleTestValidateKey,
+                          handleTestGetConfig, handleTestGetManufacturer,
+                          handleTestGetNetworks, testDemoResults, handleTestResolve
 ```
 
 ---

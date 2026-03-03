@@ -24,7 +24,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Demo Constants Consolidated**: `demoMAC`, `demoIP`, `demoHostname`, `demoOrg`, `demoMfr`, `demoOUI` extracted as package-level constants shared by all demo handlers, eliminating duplicated string literals.
 - **Uplink Note**: Removed the list of switch names from the uplink advisory callout in the results table.
 
+## [1.3.1] - 2026-03-02
 
+### Changed
+- **Code Structure**: Refactored monolithic `main.go` (2481 lines) into focused files for readability and maintainability:
+  - `web.go` — WebSocket log hub, `startWebServer`, `openBrowser`, `handleHome`
+  - `web_handlers.go` — real Meraki API handlers (`validate-key`, `resolve`, `topology`, `debug`)
+  - `web_demo.go` — `--test-data` demo constants and mock handlers
+  - `resolve.go` — `resolveDevices`, `processSwitchesForResolution`, AGGR/uplink helpers
+  - `oui.go` — OUI vendor lookup cache
+  - `main.go` reduced to entry point, `Config` struct, flag parsing, and CLI utilities
+- **Test Coverage**: Added `resolve_test.go` with `TestParseAggrPort_Resolve`, `TestIsPortUplink` (6 cases), and `TestResolveAggrPorts_*` (non-AGGR, embedded members, cache-hit)
+
+## [1.2.0] - 2026-02-26
 
 ### Added
 - **Interactive Web UI**: New `--interactive` flag launches a local HTTP server with a single-page web interface for Meraki port/device lookup
@@ -39,6 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MacTablePoll=0 in web path**: `handleResolve` was building a `Config` with `MacTablePoll: 0`, causing live MAC table polls to never run and returning empty results
 - **Browser caching**: Static files (`app.js`, `style.css`) now served with `Cache-Control: no-store` so code changes take effect immediately
 - **Stale saved org/network**: Saved localStorage org/network IDs are now validated against the current API key's org/network list before use
+
 
 ## [1.1.0] - 2026-02-19
 
@@ -137,6 +150,7 @@ This version represents the initial stable release of the Find-Meraki-Ports-With
 
 For more information, see the [README](README.md) and [repository](https://github.com/bci/Find-Meraki-Ports-With-MAC).
 
+[1.3.1]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.3.1
 [1.3.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.3.0
 [1.2.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.2.0
 [1.1.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.1.0
