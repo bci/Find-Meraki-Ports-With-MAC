@@ -4,12 +4,16 @@ This document is the authoritative as-built reference for the interactive web in
 `Find-Meraki-Ports-With-MAC`. It is written in enough detail that an AI (or developer) can
 rebuild the feature from scratch without reading any source files first.
 
-Last reflected commit: `5ed7e60`
+Last reflected commit: `7af204b`
 
 > **Note (v1.3.1)**: The interactive web backend was refactored out of `main.go` into three
 > focused files — `web.go` (hub, server, home), `web_handlers.go` (real API handlers),
 > `web_demo.go` (demo/test-data handlers). The handler signatures and behaviour are unchanged;
 > only the file locations differ. `main.go` now contains only the entry point and CLI utilities.
+
+> **License (v1.3.1)**: All source files are licensed under the GNU General Public License v3.0.
+> Every `.go` file carries the GPL v3 copyright header (Copyright (C) 2025 Kent Behrends).
+> See `LICENSE` in the repository root.
 
 ---
 

@@ -345,4 +345,3 @@ The IP resolution feature is complete when:
 9. ✅ Manual testing validates end-to-end functionality
 10. ✅ Documentation updated with examples
 11. ✅ Additional ideas reviewed and prioritized for future versions
-<parameter name="filePath">c:\Users\kent.behrends\Documents\GitHub\Find-Meraki-Ports-With-MAC\Find-Meraki-Ports-With-MAC\prompt-ip.md

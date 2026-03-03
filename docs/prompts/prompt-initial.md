@@ -60,7 +60,7 @@ Create a cross-platform Go CLI application named `Find-Meraki-Ports-With-MAC` th
 - `--log-level <level>` - Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default from .env)
 
 **Information:**
-- `--version` - Display version, commit, build time, and repository URL, then exit
+- `--version` - Display version, commit, build time, repository URL, copyright, and license, then exit
 - `--help` - Display comprehensive help with all flags, environment variables, and usage examples
 
 ### Usage Examples
@@ -958,7 +958,7 @@ Find-Meraki-Ports-With-MAC.log
 ## Documentation (README.md)
 
 ### Required Sections
-1. **Title & Badges**: Go Report Card, License (Unlicense), GitHub Release
+1. **Title & Badges**: Go Report Card, License (GPL v3 — `[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)`), GitHub Release
 2. **Description**: Brief overview of functionality
 3. **Switch Families Tested**: List of MS and C9 models
 4. **APIs Used**: All 7 endpoints with descriptions
@@ -970,9 +970,9 @@ Find-Meraki-Ports-With-MAC.log
 10. **Output Formats**: CSV, text, HTML examples
 11. **Build Scripts**: PowerShell, Bash, Make instructions
 12. **Contributing**: Contribution guidelines
-13. **License**: Unlicense (public domain)
+13. **License**: GNU General Public License v3.0 (GPL-3.0) — link to `LICENSE` file
 14. **Authors**: Kent Behrends and GitHub Copilot Agents
-15. **Repository**: GitHub repository URL
+15. **Repository**: https://github.com/bci/Find-Meraki-Ports-With-MAC
 
 ## Key Implementation Details
 
@@ -999,21 +999,35 @@ Find-Meraki-Ports-With-MAC.log
 Version information is injected at build time via `ldflags`:
 
 ```
-go build -ldflags "-X main.Version=1.3.1 -X main.Commit=$(git rev-parse --short HEAD) -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+go build -ldflags "-X main.Version=1.3.1 -X main.Commit=$(git rev-parse --short HEAD) -X main.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.GoVersion=$(go version | awk '{print $3}')"
 ```
 
-Package-level vars (zero values shown as defaults):
+Package-level declarations (zero values shown as defaults):
 ```go
-var (
-    Version   = "dev"     // set at build time
-    Commit    = "unknown" // git SHA
-    BuildTime = "unknown" // RFC3339 timestamp
-    GoVersion = "go1.21"  // can be overridden at build time
+const (
+    RepositoryURL = "https://github.com/bci/Find-Meraki-Ports-With-MAC"
 )
-const RepositoryURL = "https://github.com/bci/Find-Meraki-Ports-With-MAC"
+
+var (
+    Version   = "dev"     // set at build time via -ldflags
+    Commit    = "unknown" // git SHA set at build time
+    BuildTime = "unknown" // RFC3339 timestamp set at build time
+    GoVersion = "go1.21"  // Go version; can be overridden at build time
+)
 ```
 
-`--version` calls `printVersion(w io.Writer)` which prints all four values plus the repository URL.
+`--version` calls `printVersion(w *os.File)` which prints all fields below:
+
+```
+Find-Meraki-Ports-With-MAC version 1.3.1
+  Commit:     abc1234
+  Build Time: 2026-03-03T00:00:00Z
+  Go Version: go1.21
+  Repository: https://github.com/bci/Find-Meraki-Ports-With-MAC
+  Copyright:  (C) 2025 Kent Behrends
+  License:    GNU General Public License v3.0
+              https://www.gnu.org/licenses/gpl-3.0
+```
 
 ## Interactive Web UI
 
@@ -1032,13 +1046,34 @@ specification covering:
 
 ## License & Attribution
 
-**License**: The Unlicense (public domain)
+**License**: GNU General Public License v3.0 (GPL-3.0)
+
+Every `.go` source file carries this header (placed before the package doc comment or `package` declaration):
+
+```go
+// Copyright (C) 2025 Kent Behrends
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+```
+
+A `LICENSE` file containing the full GPL v3 text must be present in the repository root.
 
 **Authors**:
 - Kent Behrends
 - GitHub Copilot Agents
 
-**Repository**: https://github.com/BEHRConsulting/find-meraki-switch-for-mac
+**Repository**: https://github.com/bci/Find-Meraki-Ports-With-MAC
 
 ## Success Criteria
 
