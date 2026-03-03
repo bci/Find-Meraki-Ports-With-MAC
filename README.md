@@ -126,6 +126,8 @@ Launch with sanitised demo data (no API key required — useful for screenshots 
 Find-Meraki-Ports-With-MAC.exe --interactive --test-data
 ```
 
+![Find Meraki Ports — Interactive Web UI](docs/findmac-interactive.png)
+
 The web interface provides:
 
 - **API Key Management**: Secure input and validation of Meraki API keys
