@@ -67,6 +67,7 @@ var (
 	webPresetIP      string      // pre-filled IP from CLI --ip
 	webPresetOrgName string      // pre-selected org name from CLI --org
 	webPresetNetwork string      // pre-selected network name from CLI --network
+	webTestDataMode  bool        // --test-data: serve sanitised demo data, no API calls
 )
 
 // ── Log broadcast hub ─────────────────────────────────────────────────────────
@@ -147,6 +148,7 @@ func main() {
 	dnsServersFlag := flag.String("dns-servers", "", "Comma-separated DNS servers for PTR lookups (e.g. 192.168.1.1,192.168.1.2)")
 	webPortFlag := flag.String("web-port", "", "Port for web server (default: 8080)")
 	webHostFlag := flag.String("web-host", "", "Host for web server (default: localhost)")
+	testDataFlag := flag.Bool("test-data", false, "Launch web interface with sanitised demo data (no API key required)")
 	flag.Usage = func() {
 		printUsage(os.Stdout)
 	}
@@ -199,7 +201,8 @@ func main() {
 	}
 
 	// Handle interactive mode
-	if *interactiveFlag {
+	if *interactiveFlag || *testDataFlag {
+		webTestDataMode = *testDataFlag
 		webPort := firstNonEmpty(*webPortFlag, os.Getenv("WEB_PORT"), "8080")
 		webHost := firstNonEmpty(*webHostFlag, os.Getenv("WEB_HOST"), "localhost")
 		startWebServer(cfg, webHost, webPort)
@@ -699,10 +702,17 @@ func startWebServer(cfg Config, host, port string) {
 
 	// API routes
 	r.HandleFunc("/", handleHome).Methods("GET")
-	r.HandleFunc("/api/validate-key", handleValidateKey).Methods("POST")
-	r.HandleFunc("/api/config", handleGetConfig).Methods("GET")
-	r.HandleFunc("/api/networks", handleGetNetworks).Methods("GET")
-	r.HandleFunc("/api/resolve", handleResolve).Methods("POST")
+	if webTestDataMode {
+		r.HandleFunc("/api/validate-key", handleTestValidateKey).Methods("POST")
+		r.HandleFunc("/api/config", handleTestGetConfig).Methods("GET")
+		r.HandleFunc("/api/networks", handleTestGetNetworks).Methods("GET")
+		r.HandleFunc("/api/resolve", handleTestResolve).Methods("POST")
+	} else {
+		r.HandleFunc("/api/validate-key", handleValidateKey).Methods("POST")
+		r.HandleFunc("/api/config", handleGetConfig).Methods("GET")
+		r.HandleFunc("/api/networks", handleGetNetworks).Methods("GET")
+		r.HandleFunc("/api/resolve", handleResolve).Methods("POST")
+	}
 	r.HandleFunc("/api/manufacturer", handleGetManufacturer).Methods("GET")
 	r.HandleFunc("/topology", handleTopology).Methods("GET")
 	r.HandleFunc("/api/topology", handleGetTopology).Methods("GET")
@@ -904,6 +914,227 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 	_, _ = w.Write([]byte(tmpl))
 }
+
+// ── Test-data mode handlers ───────────────────────────────────────────────────
+// These handlers return sanitised demo data for screenshots / demos.
+// No API key is required and no real API calls are made.
+
+func handleTestValidateKey(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"organizations": []map[string]string{
+			{"id": "demo-org-1", "name": "Acme Corporation"},
+		},
+	})
+}
+
+func handleTestGetConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"apiKey":        "demo-key",
+		"presetMAC":     webPresetMAC,
+		"presetIP":      webPresetIP,
+		"presetOrg":     "Acme Corporation",
+		"presetNetwork": webPresetNetwork,
+	})
+}
+
+func handleTestGetNetworks(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"networks": []map[string]string{
+			{"id": "demo-net-1", "name": "HQ Campus"},
+			{"id": "demo-net-2", "name": "Warehouse"},
+			{"id": "demo-net-3", "name": "City Parks"},
+			{"id": "demo-net-4", "name": "Remote Office"},
+		},
+	})
+}
+
+// testDemoResults returns a realistic set of sanitised demo results.
+// It covers: 4 networks, a mix of MS355/MS450/C9300 devices, an AGGR port,
+// uplink ports, trunk ports, and access ports.
+func testDemoResults(mac string) []map[string]interface{} {
+	if mac == "" {
+		mac = "a4:c3:f0:85:1d:3e"
+	}
+	return []map[string]interface{}{
+		// ── HQ Campus ─────────────────────────────────────────────────────────
+		{
+			// Access switch — found on a plain access port
+			"orgName":      "Acme Corporation",
+			"networkName":  "HQ Campus",
+			"deviceName":   "sw-hq-access-01",
+			"deviceSerial": "Q2HP-XXXX-0001",
+			"port":         "12",
+			"aggrPorts":    nil,
+			"mac":          mac,
+			"ip":           "10.10.1.42",
+			"hostname":     "laptop-jsmith.acme.local",
+			"lastSeen":     "2026-03-02T14:23:00Z",
+			"manufacturer": "Apple",
+			"vlan":         100,
+			"portMode":     "access",
+			"isUplink":     false,
+		},
+		{
+			// Distribution switch — same MAC seen on uplink (AGGR) port going to core
+			"orgName":      "Acme Corporation",
+			"networkName":  "HQ Campus",
+			"deviceName":   "sw-hq-dist-01",
+			"deviceSerial": "Q2HP-XXXX-0002",
+			"port":         "AGGR/0",
+			"aggrPorts":    []string{"49", "50"},
+			"mac":          mac,
+			"ip":           "10.10.1.42",
+			"hostname":     "laptop-jsmith.acme.local",
+			"lastSeen":     "2026-03-02T14:23:00Z",
+			"manufacturer": "Apple",
+			"vlan":         1,
+			"portMode":     "trunk",
+			"isUplink":     true,
+		},
+		{
+			// Core MS450 — MAC seen on uplink port toward WAN/ISP
+			"orgName":      "Acme Corporation",
+			"networkName":  "HQ Campus",
+			"deviceName":   "sw-hq-core-ms450",
+			"deviceSerial": "Q2EK-XXXX-0003",
+			"port":         "25",
+			"aggrPorts":    nil,
+			"mac":          mac,
+			"ip":           "10.10.1.42",
+			"hostname":     "laptop-jsmith.acme.local",
+			"lastSeen":     "2026-03-02T14:22:58Z",
+			"manufacturer": "Apple",
+			"vlan":         1,
+			"portMode":     "trunk",
+			"isUplink":     true,
+		},
+		// ── Warehouse ─────────────────────────────────────────────────────────
+		{
+			// Cisco Catalyst C9300 managed by Meraki — access port
+			"orgName":      "Acme Corporation",
+			"networkName":  "Warehouse",
+			"deviceName":   "sw-wh-c9300-01",
+			"deviceSerial": "FCW-XXXX-0004",
+			"port":         "GigabitEthernet1/0/7",
+			"aggrPorts":    nil,
+			"mac":          mac,
+			"ip":           "10.20.1.55",
+			"hostname":     "scanner-wh-07.acme.local",
+			"lastSeen":     "2026-03-02T14:21:44Z",
+			"manufacturer": "Zebra Technologies",
+			"vlan":         200,
+			"portMode":     "access",
+			"isUplink":     false,
+		},
+		{
+			// Upstream C9300 stack — trunk/uplink
+			"orgName":      "Acme Corporation",
+			"networkName":  "Warehouse",
+			"deviceName":   "sw-wh-c9300-stack",
+			"deviceSerial": "FCW-XXXX-0005",
+			"port":         "GigabitEthernet1/1/1",
+			"aggrPorts":    nil,
+			"mac":          mac,
+			"ip":           "10.20.1.55",
+			"hostname":     "scanner-wh-07.acme.local",
+			"lastSeen":     "2026-03-02T14:21:44Z",
+			"manufacturer": "Zebra Technologies",
+			"vlan":         1,
+			"portMode":     "trunk",
+			"isUplink":     true,
+		},
+		// ── City Parks ────────────────────────────────────────────────────────
+		{
+			// MS355 access switch — access port, VoIP VLAN
+			"orgName":      "Acme Corporation",
+			"networkName":  "City Parks",
+			"deviceName":   "sw-parks-ms355-01",
+			"deviceSerial": "Q2DY-XXXX-0006",
+			"port":         "5",
+			"aggrPorts":    nil,
+			"mac":          mac,
+			"ip":           "172.19.2.88",
+			"hostname":     "phone-lobby.parks.local",
+			"lastSeen":     "2026-03-02T14:20:10Z",
+			"manufacturer": "Cisco Systems",
+			"vlan":         300,
+			"portMode":     "access",
+			"isUplink":     false,
+		},
+		{
+			// MS355 — uplink port to ISP fiber router (no LLDP — detected via port status)
+			"orgName":      "Acme Corporation",
+			"networkName":  "City Parks",
+			"deviceName":   "sw-parks-ms355-01",
+			"deviceSerial": "Q2DY-XXXX-0006",
+			"port":         "49",
+			"aggrPorts":    nil,
+			"mac":          mac,
+			"ip":           "172.19.2.88",
+			"hostname":     "phone-lobby.parks.local",
+			"lastSeen":     "2026-03-02T14:20:10Z",
+			"manufacturer": "Cisco Systems",
+			"vlan":         1,
+			"portMode":     "trunk",
+			"isUplink":     true,
+		},
+		// ── Remote Office ─────────────────────────────────────────────────────
+		{
+			// Small MS355 — access port, found MAC
+			"orgName":      "Acme Corporation",
+			"networkName":  "Remote Office",
+			"deviceName":   "sw-remote-ms355-01",
+			"deviceSerial": "Q2DY-XXXX-0007",
+			"port":         "3",
+			"aggrPorts":    nil,
+			"mac":          mac,
+			"ip":           "192.168.50.21",
+			"hostname":     "workstation-roff.acme.local",
+			"lastSeen":     "2026-03-02T13:58:30Z",
+			"manufacturer": "Dell",
+			"vlan":         50,
+			"portMode":     "access",
+			"isUplink":     false,
+		},
+		{
+			// Upstream trunk port on same switch
+			"orgName":      "Acme Corporation",
+			"networkName":  "Remote Office",
+			"deviceName":   "sw-remote-ms355-01",
+			"deviceSerial": "Q2DY-XXXX-0007",
+			"port":         "AGGR/0",
+			"aggrPorts":    []string{"51", "52"},
+			"mac":          mac,
+			"ip":           "192.168.50.21",
+			"hostname":     "workstation-roff.acme.local",
+			"lastSeen":     "2026-03-02T13:58:30Z",
+			"manufacturer": "Dell",
+			"vlan":         1,
+			"portMode":     "trunk",
+			"isUplink":     true,
+		},
+	}
+}
+
+func handleTestResolve(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var req struct {
+		MAC string `json:"mac"`
+		IP  string `json:"ip"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	mac := req.MAC
+	if mac == "" {
+		mac = "a4:c3:f0:85:1d:3e"
+	}
+	results := testDemoResults(mac)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"results": results})
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 func handleValidateKey(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
