@@ -811,4 +811,7 @@ func printVersion(w *os.File) {
 	_, _ = fmt.Fprintf(w, "  Build Time: %s\n", BuildTime)
 	_, _ = fmt.Fprintf(w, "  Go Version: %s\n", GoVersion)
 	_, _ = fmt.Fprintf(w, "  Repository: %s\n", RepositoryURL)
+	_, _ = fmt.Fprintf(w, "  Copyright:  (C) 2025 Kent Behrends\n")
+	_, _ = fmt.Fprintf(w, "  License:    GNU General Public License v3.0\n")
+	_, _ = fmt.Fprintf(w, "              https://www.gnu.org/licenses/gpl-3.0\n")
 }
