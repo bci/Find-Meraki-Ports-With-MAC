@@ -822,11 +822,17 @@ type LLDPCDPData struct {
 }
 
 // GetDeviceUplinkPorts returns the set of port IDs on the given device that are
-// confirmed switch-to-switch uplinks — i.e. ports where the LLDP/CDP neighbor
-// advertises switch capabilities (CDP "capabilities" contains "Switch", or LLDP
-// "systemCapabilities" contains "S-VLAN" or "Bridge"). Non-switch Meraki devices
-// such as APs (which only advertise "Router" or "Two-port MAC Relay") are excluded.
-// Third-party switches are included — the Meraki dashboard URL is not required.
+// confirmed switch-to-switch uplinks according to LLDP/CDP neighbor data.
+//
+// Detection strategy (in priority order):
+//  1. LLDP systemCapabilities contains "S-VLAN" or "Bridge" → confirmed switch uplink.
+//     This is the most reliable signal; APs advertise "Two-port MAC Relay" instead.
+//  2. CDP capabilities contains "Switch" AND NOT "Router" → confirmed switch uplink.
+//     APs advertise "Router, Switch" so we require the absence of "Router" to exclude them.
+//     Third-party switches (e.g. GTrans) that only advertise "Switch" are included.
+//
+// Ports absent from lldpCdp (e.g. uplinks to silent/non-LLDP devices) cannot be
+// detected here and must be identified by other means (e.g. MAC table lookup).
 // Returns an empty set (never nil) on error.
 func (m *MerakiClient) GetDeviceUplinkPorts(ctx context.Context, serial string) map[string]struct{} {
 	path := fmt.Sprintf("/devices/%s/lldpCdp", serial)
@@ -845,32 +851,37 @@ func (m *MerakiClient) GetDeviceUplinkPorts(ctx context.Context, serial string) 
 	}
 	uplinks := make(map[string]struct{})
 	for portID, portData := range raw.Ports {
-		// Check if the neighbor is a switch via CDP capabilities.
 		isSwitchNeighbor := false
-		if cdpRaw, ok := portData["cdp"]; ok {
-			var cdp struct {
-				Capabilities string `json:"capabilities"`
+
+		// Priority 1: LLDP systemCapabilities — most reliable; APs report "Two-port MAC Relay".
+		if lldpRaw, ok := portData["lldp"]; ok {
+			var lldp struct {
+				SystemCapabilities string `json:"systemCapabilities"`
 			}
-			if json.Unmarshal(cdpRaw, &cdp) == nil {
-				if strings.Contains(cdp.Capabilities, "Switch") {
+			if json.Unmarshal(lldpRaw, &lldp) == nil {
+				caps := lldp.SystemCapabilities
+				if strings.Contains(caps, "S-VLAN") || strings.Contains(caps, "Bridge") {
 					isSwitchNeighbor = true
 				}
 			}
 		}
+
+		// Priority 2: CDP capabilities — only if LLDP didn't already confirm.
+		// Require "Switch" WITHOUT "Router" to exclude APs ("Router, Switch").
 		if !isSwitchNeighbor {
-			// Also accept if LLDP systemCapabilities mentions bridge/switch
-			if lldpRaw, ok := portData["lldp"]; ok {
-				var lldp struct {
-					SystemCapabilities string `json:"systemCapabilities"`
+			if cdpRaw, ok := portData["cdp"]; ok {
+				var cdp struct {
+					Capabilities string `json:"capabilities"`
 				}
-				if json.Unmarshal(lldpRaw, &lldp) == nil {
-					caps := lldp.SystemCapabilities
-					if strings.Contains(caps, "S-VLAN") || strings.Contains(caps, "Bridge") {
+				if json.Unmarshal(cdpRaw, &cdp) == nil {
+					caps := cdp.Capabilities
+					if strings.Contains(caps, "Switch") && !strings.Contains(caps, "Router") {
 						isSwitchNeighbor = true
 					}
 				}
 			}
 		}
+
 		if isSwitchNeighbor {
 			uplinks[portID] = struct{}{}
 		}
