@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/bci/Find-Meraki-Ports-With-MAC/workflows/Tests/badge.svg)](https://github.com/bci/Find-Meraki-Ports-With-MAC/actions)
 [![Go Report Card](https://goreportcard.com/badge/github.com/bci/Find-Meraki-Ports-With-MAC)](https://goreportcard.com/report/github.com/bci/Find-Meraki-Ports-With-MAC)
-[![codecov](https://codecov.io/gh/bci/Find-Meraki-Ports-With-MAC/branch/main/graph/badge.svg)](https://codecov.io/gh/bci/Find-Meraki-Ports-With-MAC)
+[![codecov](https://codecov.io/gh/bci/Find-Meraki-Ports-With-MAC/branch/master/graph/badge.svg)](https://codecov.io/gh/bci/Find-Meraki-Ports-With-MAC)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![GitHub release](https://img.shields.io/github/release/bci/Find-Meraki-Ports-With-MAC.svg)](https://github.com/bci/Find-Meraki-Ports-With-MAC/releases)
 
