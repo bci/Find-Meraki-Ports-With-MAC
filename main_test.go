@@ -16,6 +16,10 @@
 package main
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"Find-Meraki-Ports-With-MAC/pkg/meraki"
@@ -251,5 +255,220 @@ func TestParseAggrPort(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// ── firstNonZeroInt ───────────────────────────────────────────────────────────
+
+func TestFirstNonZeroInt(t *testing.T) {
+	tests := []struct {
+		name   string
+		values []int
+		want   int
+	}{
+		{"first non-zero", []int{0, 0, 5}, 5},
+		{"all zero", []int{0, 0, 0}, 0},
+		{"first is non-zero", []int{3, 0, 9}, 3},
+		{"single non-zero", []int{7}, 7},
+		{"empty", []int{}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := firstNonZeroInt(tt.values...)
+			if got != tt.want {
+				t.Errorf("firstNonZeroInt(%v) = %d, want %d", tt.values, got, tt.want)
+			}
+		})
+	}
+}
+
+// ── parseIntEnv ───────────────────────────────────────────────────────────────
+
+func TestParseIntEnv(t *testing.T) {
+	t.Setenv("TEST_INT_ENV_42", "42")
+	t.Setenv("TEST_INT_ENV_BAD", "notanint")
+	t.Setenv("TEST_INT_ENV_EMPTY", "")
+
+	tests := []struct {
+		key  string
+		want int
+	}{
+		{"TEST_INT_ENV_42", 42},
+		{"TEST_INT_ENV_BAD", 0},
+		{"TEST_INT_ENV_EMPTY", 0},
+		{"TEST_INT_ENV_UNSET", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.key, func(t *testing.T) {
+			got := parseIntEnv(tt.key)
+			if got != tt.want {
+				t.Errorf("parseIntEnv(%q) = %d, want %d", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
+// ── resolveEnvFile ────────────────────────────────────────────────────────────
+
+func TestResolveEnvFile_Default(t *testing.T) {
+	// With no --env in os.Args (test runner args won't contain it) the default
+	// should be ~/.env.find-mac
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skip("cannot determine home dir:", err)
+	}
+	want := filepath.Join(home, ".env.find-mac")
+	got := resolveEnvFile()
+	if got != want {
+		t.Errorf("resolveEnvFile() = %q, want %q", got, want)
+	}
+}
+
+func TestResolveEnvFile_FlagEquals(t *testing.T) {
+	old := os.Args
+	t.Cleanup(func() { os.Args = old })
+	os.Args = []string{"cmd", "--env=/tmp/custom.env"}
+
+	got := resolveEnvFile()
+	if got != "/tmp/custom.env" {
+		t.Errorf("resolveEnvFile() = %q, want /tmp/custom.env", got)
+	}
+}
+
+func TestResolveEnvFile_FlagSpace(t *testing.T) {
+	old := os.Args
+	t.Cleanup(func() { os.Args = old })
+	os.Args = []string{"cmd", "--env", "/tmp/spaced.env"}
+
+	got := resolveEnvFile()
+	if got != "/tmp/spaced.env" {
+		t.Errorf("resolveEnvFile() = %q, want /tmp/spaced.env", got)
+	}
+}
+
+// ── printVersion ─────────────────────────────────────────────────────────────
+
+func TestPrintVersion(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	printVersion(w)
+	_ = w.Close()
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	out := buf.String()
+
+	for _, want := range []string{"Find-Meraki-Ports-With-MAC", "Copyright", "GNU General Public License", "https://www.gnu.org/licenses"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("printVersion() output missing %q\nfull output:\n%s", want, out)
+		}
+	}
+}
+
+// ── printUsage ────────────────────────────────────────────────────────────────
+
+func TestPrintUsage(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	printUsage(w)
+	_ = w.Close()
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	out := buf.String()
+
+	for _, want := range []string{"--mac", "--env", "--interactive", "MERAKI_API_KEY", "Examples"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("printUsage() output missing %q", want)
+		}
+	}
+}
+
+// ── writeOrganizations / writeNetworksForOrg ──────────────────────────────────
+
+func TestWriteOrganizations(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orgs := []meraki.Organization{
+		{ID: "o1", Name: "Acme"},
+		{ID: "o2", Name: "Globex"},
+	}
+	writeOrganizations(w, orgs)
+	_ = w.Close()
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	out := buf.String()
+
+	for _, want := range []string{"Acme", "o1", "Globex", "o2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("writeOrganizations() output missing %q\nfull:\n%s", want, out)
+		}
+	}
+}
+
+func TestWriteNetworksForOrg(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	org := meraki.Organization{ID: "o1", Name: "Acme"}
+	nets := []meraki.Network{
+		{ID: "n1", Name: "HQ"},
+		{ID: "n2", Name: "Branch"},
+	}
+	writeNetworksForOrg(w, org, nets)
+	_ = w.Close()
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	out := buf.String()
+
+	for _, want := range []string{"Acme", "HQ", "n1", "Branch", "n2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("writeNetworksForOrg() output missing %q\nfull:\n%s", want, out)
+		}
+	}
+}
+
+func TestWriteNetworksForOrg_Empty(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeNetworksForOrg(w, meraki.Organization{ID: "o1", Name: "Acme"}, nil)
+	_ = w.Close()
+	var buf bytes.Buffer
+	_, _ = buf.ReadFrom(r)
+	out := buf.String()
+	if !strings.Contains(out, "no networks") {
+		t.Errorf("writeNetworksForOrg() with no networks should say 'no networks', got:\n%s", out)
+	}
+}
+
+// ── OUI cache ─────────────────────────────────────────────────────────────────
+
+func TestGetManufacturer_CacheHit(t *testing.T) {
+	// Pre-populate the cache so no HTTP call is made
+	ouiCache.Store("AA:BB:CC", "TestVendor")
+	got := getManufacturer("aa:bb:cc:dd:ee:ff")
+	if got != "TestVendor" {
+		t.Errorf("getManufacturer() = %q, want TestVendor (cache hit)", got)
+	}
+}
+
+func TestLookupOUI_EmptyMAC(t *testing.T) {
+	got := lookupOUI("")
+	if got != "" {
+		t.Errorf("lookupOUI(\"\") = %q, want \"\"", got)
+	}
+}
+
+func TestLookupOUI_ShortMAC(t *testing.T) {
+	got := lookupOUI("AA:BB")
+	if got != "" {
+		t.Errorf("lookupOUI(\"AA:BB\") = %q, want \"\" (too short)", got)
 	}
 }
