@@ -24,6 +24,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Demo Constants Consolidated**: `demoMAC`, `demoIP`, `demoHostname`, `demoOrg`, `demoMfr`, `demoOUI` extracted as package-level constants shared by all demo handlers, eliminating duplicated string literals.
 - **Uplink Note**: Removed the list of switch names from the uplink advisory callout in the results table.
 
+## [1.3.2] - 2026-03-03
+
+### Added
+- **`--env <filepath>` flag**: Explicitly select the `.env` configuration file to
+  load. Useful when running the binary from an SMB share, a read-only directory,
+  or a CI environment where the working directory may vary.
+- **Home-directory default**: When `--env` is not provided the app now looks for
+  `~/.env.find-mac` in the user's home directory (`%USERPROFILE%\.env.find-mac`
+  on Windows), instead of the current working directory. This means config is
+  always found regardless of where the binary is launched from.
+- **Auto-create stub**: If the default env file does not exist it is created
+  automatically with commented-out key/value stubs so the user has a clear
+  starting point — no manual file creation required.
+
+### Changed
+- **Error message** for missing `MERAKI_API_KEY` now includes the resolved env
+  file path so it is immediately clear which file to edit.
+
 ## [1.3.1] - 2026-03-02
 
 ### Changed
@@ -150,6 +168,7 @@ This version represents the initial stable release of the Find-Meraki-Ports-With
 
 For more information, see the [README](README.md) and [repository](https://github.com/bci/Find-Meraki-Ports-With-MAC).
 
+[1.3.2]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.3.2
 [1.3.1]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.3.1
 [1.3.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.3.0
 [1.2.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.2.0

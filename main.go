@@ -34,6 +34,8 @@ import (
 	"Find-Meraki-Ports-With-MAC/pkg/meraki"
 	"Find-Meraki-Ports-With-MAC/pkg/output"
 
+	"path/filepath"
+
 	"github.com/joho/godotenv"
 )
 
@@ -77,8 +79,59 @@ var (
 	webTestDataMode  bool        // --test-data: serve sanitised demo data, no API calls
 )
 
+// resolveEnvFile resolves the .env file path to use.
+// Priority: --env flag > default (~/.env.find-mac).
+// If the resolved file does not exist it is created as an empty file so the
+// user has a clear location to populate.
+func resolveEnvFile() string {
+	// Pre-scan os.Args for --env / --env=<path> before flag.Parse runs so that
+	// the file is loaded before env-vars are consumed into Config.
+	args := os.Args[1:]
+	for i, a := range args {
+		if a == "--env" || a == "-env" {
+			if i+1 < len(args) {
+				return args[i+1]
+			}
+		}
+		if strings.HasPrefix(a, "--env=") {
+			return strings.TrimPrefix(a, "--env=")
+		}
+		if strings.HasPrefix(a, "-env=") {
+			return strings.TrimPrefix(a, "-env=")
+		}
+	}
+
+	// Default: ~/.env.find-mac
+	home, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to current directory if home cannot be determined
+		return ".env.find-mac"
+	}
+	return filepath.Join(home, ".env.find-mac")
+}
+
 func main() {
-	_ = godotenv.Load()
+	envFile := resolveEnvFile()
+
+	// Create the env file if it does not exist so the user has a ready-made
+	// location to add their settings (home directory on all platforms).
+	if _, err := os.Stat(envFile); os.IsNotExist(err) {
+		if f, err := os.OpenFile(envFile, os.O_CREATE|os.O_WRONLY, 0600); err == nil {
+			_, _ = fmt.Fprintf(f, "# Find-Meraki-Ports-With-MAC configuration\n")
+			_, _ = fmt.Fprintf(f, "# Edit this file to set your defaults.\n")
+			_, _ = fmt.Fprintf(f, "#\n")
+			_, _ = fmt.Fprintf(f, "# MERAKI_API_KEY=your-api-key-here\n")
+			_, _ = fmt.Fprintf(f, "# MERAKI_ORG=My Organization\n")
+			_, _ = fmt.Fprintf(f, "# MERAKI_NETWORK=ALL\n")
+			_, _ = fmt.Fprintf(f, "# OUTPUT_FORMAT=csv\n")
+			_ = f.Close()
+		}
+	}
+
+	_ = godotenv.Load(envFile)
+
+	envFlag := flag.String("env", envFile, "Path to .env config file")
+	_ = envFlag // consumed by pre-scan above; registered so --help shows it
 
 	macFlag := flag.String("mac", "", "MAC address or pattern")
 	ipFlag := flag.String("ip", "", "IP address to resolve to MAC")
@@ -166,7 +219,7 @@ func main() {
 	log := logger.New(cfg.LogFile, logger.ParseLogLevel(cfg.LogLevel))
 
 	if cfg.APIKey == "" {
-		exitWithError(log, "MERAKI_API_KEY is required in .env or environment")
+		exitWithError(log, "MERAKI_API_KEY is required — set it in "+envFile+" or as an environment variable")
 	}
 	if cfg.NetworkName == "" {
 		cfg.NetworkName = "ALL"
@@ -756,6 +809,13 @@ func printUsage(w *os.File) {
 	_, _ = fmt.Fprintln(w, "  --interactive               Launch interactive web interface")
 	_, _ = fmt.Fprintln(w, "  --web-port <port>           Web server port (default: 8080)")
 	_, _ = fmt.Fprintln(w, "  --web-host <host>           Web server host (default: localhost)")
+	_, _ = fmt.Fprintln(w, "  --env <filepath>            Path to .env config file")
+	_, _ = fmt.Fprintln(w, "                                Default: ~/.env.find-mac  (macOS/Linux)")
+	_, _ = fmt.Fprintln(w, "                                         $env:USERPROFILE\\.env.find-mac  (Windows)")
+	_, _ = fmt.Fprintln(w, "                                The file is created automatically with commented")
+	_, _ = fmt.Fprintln(w, "                                stubs if it does not exist.")
+	_, _ = fmt.Fprintln(w, "                                Use --env to point to a network share, project")
+	_, _ = fmt.Fprintln(w, "                                directory, or any other location.")
 	_, _ = fmt.Fprintln(w, "  --version                   Show version and exit")
 	_, _ = fmt.Fprintln(w, "  --help                      Show this help")
 	_, _ = fmt.Fprintln(w, "")

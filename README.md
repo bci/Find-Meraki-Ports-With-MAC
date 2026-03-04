@@ -196,19 +196,42 @@ Wildcard patterns:
 - 08:f1:b3:6f:9c:*
 - 08:f1:b3:6f:9c:[1-4][0-f]
 
-## Environment (.env)
+## Configuration (.env file)
 
-Create a `.env` file (see `.env.example`).
+The app reads configuration from a `.env` file. By default it looks for
+**`~/.env.find-mac`** in your home directory — this file is created automatically
+with commented-out stubs the first time you run the app.
 
-- MERAKI_API_KEY: required
-- MERAKI_ORG: default org name if --org is not provided
-- MERAKI_NETWORK: default network name or ALL
-- OUTPUT_FORMAT: csv | text | html
-- MERAKI_BASE_URL: optional (defaults to https://api.meraki.com/api/v1)
-- LOG_FILE: log file path (default Find-Meraki-Ports-With-MAC.log)
-- LOG_LEVEL: DEBUG | INFO | WARNING | ERROR
-- WEB_PORT: default web server port (default: 8080)
-- WEB_HOST: default web server host (default: localhost)
+| Platform | Default location |
+|----------|------------------|
+| macOS / Linux | `~/.env.find-mac` (`/home/<user>/.env.find-mac`) |
+| Windows | `%USERPROFILE%\.env.find-mac` (e.g. `C:\Users\kent\.env.find-mac`) |
+
+You can override the path with `--env <filepath>`:
+
+```bash
+# Use a shared config on a network drive
+findmac --env /Volumes/share/meraki.env --mac 00:11:22:33:44:55
+
+# Use a project-local .env
+findmac --env .env --mac 00:11:22:33:44:55
+```
+
+### Variables
+
+- `MERAKI_API_KEY` — **required** — Meraki Dashboard API key
+- `MERAKI_ORG` — default org name (used if `--org` is not provided)
+- `MERAKI_NETWORK` — default network name or `ALL`
+- `OUTPUT_FORMAT` — `csv` | `text` | `html`
+- `MERAKI_BASE_URL` — optional (defaults to `https://api.meraki.com/api/v1`)
+- `MERAKI_RETRIES` — max API retry attempts on rate limit (default `6`)
+- `MERAKI_MAC_POLL` — MAC table poll attempts, 2 s each (default `15`)
+- `DNS_SERVERS` — comma-separated DNS servers for PTR lookups
+- `LOG_FILE` — log file path (default `Find-Meraki-Ports-With-MAC.log`)
+- `LOG_LEVEL` — `DEBUG` | `INFO` | `WARNING` | `ERROR`
+- `WEB_PORT` — web server port (default `8080`)
+- `WEB_HOST` — web server host (default `localhost`)
+- `HOST_OVERRIDES` — JSON array of static IP→hostname mappings
 
 ## Flags
 
@@ -235,6 +258,9 @@ Create a `.env` file (see `.env.example`).
 **Logging:**
 - --log-file: log file path (default from .env)
 - --log-level: DEBUG | INFO | WARNING | ERROR
+
+**Configuration:**
+- --env: path to `.env` config file (default: `~/.env.find-mac`; created automatically if absent)
 
 **Information:**
 - --version: show version, commit, build time, and repository URL
