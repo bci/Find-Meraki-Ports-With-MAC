@@ -17,6 +17,7 @@ bin/
 # Output of the go coverage tool
 *.out
 *.prof
+coverage.txt
 
 # Dependency directories
 vendor/
