@@ -1,5 +1,6 @@
 /**
- * topology.js — D3 force-graph for network topology view.
+ * @module topology
+ * @file topology.js — D3 force-graph for network topology view.
  * Served at /static/js/topology.js by the static file server.
  *
  * Configuration is read from <meta> tags written by handleTopology:
@@ -12,11 +13,21 @@
  *   <meta name="topo-port-mode"        content="...">
  *   <meta name="topo-highlight-mac"    content="...">
  *   <meta name="topo-highlight-host"   content="...">
+ *
+ * It fetches /api/topology for the network, draws switches and other devices
+ * as a draggable, zoomable force graph, highlights the switch where the MAC
+ * was found and, for access ports, adds a virtual "found device" node linked
+ * to that switch. Requires the global d3 (v7) loaded by the page.
  */
 
 (function () {
   'use strict';
 
+  /**
+   * Read a configuration value from a meta tag written by handleTopology.
+   * @param {string} name The meta tag's name attribute.
+   * @returns {string} Its content, or "" when the tag is missing.
+   */
   function meta(name) {
     const el = document.querySelector('meta[name="' + name + '"]');
     return el ? el.getAttribute('content') || '' : '';
@@ -47,6 +58,7 @@
   const url = '/api/topology?networkId=' + encodeURIComponent(NETWORK_ID)
             + '&apiKey='   + encodeURIComponent(API_KEY);
 
+  /** @type {?Object} The d3.zoom behaviour, set by renderGraph and used by Reset Zoom. */
   let zoomBehavior;
 
   fetch(url)
@@ -79,6 +91,11 @@
       console.error(err);
     });
 
+  /**
+   * CSS class for a node, derived from its type string.
+   * @param {{isPc?: boolean, type?: string}} d Graph node.
+   * @returns {string} One of "pc", "switch", "wireless", "appliance", "camera", "other".
+   */
   function nodeClass(d) {
     if (d.isPc) return 'pc';
     const t = (d.type || '').toLowerCase();
@@ -89,6 +106,14 @@
     return 'other';
   }
 
+  /**
+   * Draw the force graph into #root and, after 2.2 s, zoom to the highlighted
+   * switch (or the virtual device node).
+   * @param {Array<{id: string, name?: string, type?: string, model?: string, isPc?: boolean}>} nodes
+   *   Graph nodes; mutated by d3 with x/y positions.
+   * @param {Array<{source: string, target: string, isPcLink?: boolean, port?: string}>} links
+   *   Graph links by node ID; d3 replaces source/target with node objects.
+   */
   function renderGraph(nodes, links) {
     const W = document.getElementById('canvas').clientWidth;
     const H = document.getElementById('canvas').clientHeight;

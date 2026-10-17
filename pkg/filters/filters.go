@@ -67,6 +67,8 @@ func MatchesSwitchFilter(name, filter string) bool {
 
 // MatchesPortFilter checks if a port matches the filter.
 // The filter can be an exact match or a substring match.
+// Matching is case-sensitive, and an empty filter matches every port. Because
+// substrings match, filter "3" also matches ports "13", "23" and "AGGR/3".
 func MatchesPortFilter(port, filter string) bool {
 	if port == filter {
 		return true

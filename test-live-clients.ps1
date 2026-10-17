@@ -3,14 +3,39 @@
     Tests the Meraki /devices/{serial}/switch/liveTools/clients endpoint.
     This is an Early Access API - may 404 if not enabled for your org.
 
+.DESCRIPTION
+    Developer probe, not part of the build. It loads MERAKI_API_KEY and
+    MERAKI_BASE_URL from a .env file next to this script (not from
+    ~/.env.find-mac), POSTs a live-tools clients job for one switch, prints the
+    raw response, then polls the job every 2 seconds and prints the result as
+    JSON. It calls the real Meraki API with the configured key.
+
+    The job ID field name was unknown when this was written, so it tries
+    clientsId, id and jobId in turn.
+
 .PARAMETER Serial
     Switch serial number (e.g. Q2XX-XXXX-XXXX). Prompts if not supplied.
+    Note: the parameter has a hard-coded default serial, so the prompt only
+    appears when an empty string is passed explicitly (-Serial '').
 
 .PARAMETER MaxPoll
     Maximum number of 2-second poll attempts (default: 10).
 
 .EXAMPLE
     .\test-live-clients.ps1 -Serial Q2HP-XXXX-XXXX
+
+.INPUTS
+    None. This script does not accept pipeline input.
+
+.OUTPUTS
+    System.String. JSON text of the create response and of the final poll
+    response.
+
+.NOTES
+    Requires PowerShell 7+ (uses the ?? operator). Exit codes: 0 on a
+    completed job or when no job ID is returned; 1 when the key is missing,
+    the create call fails or the job reports "failed". A poll timeout ends
+    without an explicit exit code.
 #>
 param(
     [string]$Serial = "Q2DY-HRFF-L8UJ",

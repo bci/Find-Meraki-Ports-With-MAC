@@ -3,6 +3,22 @@
 # Usage:
 #   ./build.sh           - run tests + lint, then build ./findmac
 #   ./build.sh --package - same as above, then also build static binaries for all platforms in ./bin
+#
+# Runs `go test -v ./...`, `go vet ./...` and `golangci-lint run ./...`, then
+# builds a native ./findmac with CGO disabled and version metadata injected
+# through -ldflags (main.Version from VERSION below, main.Commit from git,
+# main.BuildTime in UTC). With --package it also cross-compiles six static
+# binaries (windows/darwin/linux x amd64/arm64) into ./bin/.
+#
+# Arguments: --package (optional); any other argument is ignored.
+# Outputs:   ./findmac, and with --package ./bin/Find-Meraki-Ports-With-MAC-<os>-<arch>[.exe].
+# Requires:  go, git (optional, for the commit hash). If golangci-lint is not
+#            on PATH it is downloaded and installed into $(go env GOPATH)/bin
+#            by piping the upstream install.sh (master branch) to sh.
+# Exit:      non-zero on the first failing test, lint or build step (set -e).
+#
+# VERSION here must be kept in step with release.sh, build.ps1 and the
+# Makefile by hand.
 
 PACKAGE=false
 for arg in "$@"; do

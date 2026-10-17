@@ -15,6 +15,20 @@
 
 // Package main provides a command-line tool for finding MAC addresses on Meraki switches.
 // It supports both native Meraki MS switches and Cisco Catalyst switches managed by Meraki.
+//
+// The binary has two modes. The CLI mode (main.go) takes --mac or --ip,
+// searches every switch in the selected network(s) and prints CSV, text or
+// HTML to stdout. The interactive mode (--interactive or --test-data, see
+// web.go) starts a local web server with a browser UI that runs the same
+// lookup through resolveDevices in resolve.go.
+//
+// Each network is searched three ways, because no single Meraki API sees every
+// client: the network clients list, the live MAC table of each switch (the
+// only reliable source on Meraki-managed Catalyst switches), and the
+// per-device clients list as a fallback. Rows are de-duplicated by addResult.
+//
+// Configuration comes from flags, then environment variables, then a .env file
+// (default ~/.env.find-mac, created on first run). See printUsage for the list.
 package main
 
 import (
@@ -40,6 +54,10 @@ import (
 )
 
 // Config holds all configuration options from environment variables and command-line flags.
+//
+// The web path reuses it with different meanings: there NetworkName carries a
+// Meraki network ID rather than a name, and OrgID is set (the CLI leaves it
+// empty). See resolveDevices.
 type Config struct {
 	APIKey       string // Meraki Dashboard API key
 	OrgName      string // Organization name filter
@@ -63,9 +81,15 @@ type Config struct {
 // Version information injected at build time via ldflags.
 // Build with: go build -ldflags "-X main.Version=1.0.0 -X main.Commit=<git-sha> -X main.BuildTime=<timestamp>"
 const (
+	// RepositoryURL is the project's home page, printed by --version.
 	RepositoryURL = "https://github.com/bci/Find-Meraki-Ports-With-MAC"
 )
 
+// Build metadata and interactive-mode state. Version, Commit and BuildTime
+// are overwritten with -ldflags "-X main.Name=value" by the Makefile, build
+// scripts and CI; no script sets GoVersion, so it always reports go1.21. The
+// web* variables are written once by main/startWebServer before the server
+// starts and only read afterwards.
 var (
 	Version          = "dev"     // Version set at build time
 	Commit           = "unknown" // Git commit SHA set at build time
@@ -81,8 +105,10 @@ var (
 
 // resolveEnvFile resolves the .env file path to use.
 // Priority: --env flag > default (~/.env.find-mac).
-// If the resolved file does not exist it is created as an empty file so the
-// user has a clear location to populate.
+// resolveEnvFile only computes the path: main creates a missing file with
+// commented-out stubs so the user has a clear location to populate. If the
+// home directory cannot be determined it falls back to ".env.find-mac" in the
+// current directory. A trailing "--env" with no value is ignored.
 func resolveEnvFile() string {
 	// Pre-scan os.Args for --env / --env=<path> before flag.Parse runs so that
 	// the file is loaded before env-vars are consumed into Config.
@@ -110,6 +136,16 @@ func resolveEnvFile() string {
 	return filepath.Join(home, ".env.find-mac")
 }
 
+// main loads the .env file, parses flags into a Config, and then runs exactly
+// one action: --help, --version, the web server, --test-api, --list-orgs,
+// --list-networks, or a MAC/IP lookup. Fatal problems go through
+// exitWithError, which exits with status 1.
+//
+// The lookup walks each selected network and, per network, (1) matches the
+// network clients list, then (2) for each switch runs a live MAC table lookup
+// and, only if the target MAC was not found there, (3) falls back to the
+// device clients list. Results are sorted by network, switch and port before
+// being written to stdout.
 func main() {
 	envFile := resolveEnvFile()
 
@@ -723,6 +759,7 @@ func parseIntEnv(key string) int {
 
 // exitWithError logs an error message and exits the program with status code 1.
 // If log is nil, the error is written to stderr instead.
+// It never returns.
 func exitWithError(log *logger.Logger, msg string) {
 	if log != nil {
 		log.Errorf(msg)
@@ -782,6 +819,9 @@ func addResult(index map[string]struct{}, rows *[]output.ResultRow, row output.R
 
 // printUsage writes comprehensive help text to the specified file.
 // Includes all command-line flags, environment variables, and usage examples.
+// It is also installed as flag.Usage, so a flag parse error prints it too.
+// The text is maintained by hand and must be kept in step with the flags
+// registered in main.
 func printUsage(w *os.File) {
 	_, _ = fmt.Fprintln(w, "Find-Meraki-Ports-With-MAC - Meraki MAC lookup")
 	_, _ = fmt.Fprintln(w, "")
@@ -864,7 +904,9 @@ func writeNetworksForOrg(w *os.File, org meraki.Organization, networks []meraki.
 	}
 }
 
-// printVersion writes version and build information to the specified file.
+// printVersion writes version, build metadata (see Version, Commit,
+// BuildTime, GoVersion), repository URL and the GPL notice to the specified
+// file.
 func printVersion(w *os.File) {
 	_, _ = fmt.Fprintf(w, "Find-Meraki-Ports-With-MAC version %s\n", Version)
 	_, _ = fmt.Fprintf(w, "  Commit:     %s\n", Commit)

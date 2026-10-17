@@ -50,6 +50,12 @@ This tool utilizes the following Meraki Dashboard API v1 endpoints:
 - `POST /devices/{serial}/liveTools/macTable` - Initiate live MAC table lookup (critical for Catalyst switches)
 - `GET /devices/{serial}/liveTools/macTable/{macTableId}` - Poll for MAC table lookup results
 - `GET /devices/{serial}/switch/ports/statuses` - Determine uplink ports (matches what Meraki Dashboard shows)
+- `GET /networks/{networkId}/switch/linkAggregations` - Map `AGGR/n` link-aggregation ports to their member ports
+- `GET /devices/{serial}/switch/ports` and `GET /devices/{serial}/switch/ports/{portId}` - Port mode (access/trunk), VLAN and AGGR membership fallback
+- `POST /devices/{serial}/liveTools/arpTable` and `GET /devices/{serial}/liveTools/arpTable/{arpTableId}` - Fill in a missing IP for a found MAC
+- `GET /networks/{networkId}/topology/linkLayer` - Topology view in the web interface (falls back to the device list)
+
+All calls are read-only apart from the two `POST .../liveTools/...` calls, which start a lookup job on the switch.
 
 The live MAC table lookup is essential for Cisco Catalyst switches managed by Meraki, as standard client endpoints may have limited visibility. The clients API provides IP-to-MAC resolution for IP-based lookups.
 
@@ -130,18 +136,28 @@ Find-Meraki-Ports-With-MAC.exe --interactive --test-data
 
 The web interface provides:
 
-- **API Key Management**: Secure input and validation of Meraki API keys
-- **Organization & Network Selection**: Dropdown menus for easy navigation
-- **Device Resolution**: Search by MAC address or IP address with instant results
-- **Network Topology**: Interactive visualization of switch connections (D3.js)
+- **API Key Management**: Input and validation of Meraki API keys (or the key from your `.env`, used automatically)
+- **Organization & Network Selection**: Dropdown menus for easy navigation, including "All Networks"
+- **Device Resolution**: Search by MAC address or IP address; results can be sorted and exported as CSV or JSON
+- **Network Topology**: Interactive visualization of switch connections (D3.js, loaded from d3js.org)
 - **Real-time Logs**: Live logging with WebSocket streaming
-- **Manufacturer Lookup**: IEEE OUI database integration for device identification
-- **Alert Monitoring**: Real-time notifications for network events
+- **Manufacturer Lookup**: Vendor name from the MAC's OUI, looked up online at `api.macvendors.com` (only the first three octets are sent)
+
+`/api/alerts` and `/api/logs` exist but are stubs that return empty lists; there is no alert monitoring yet.
+
+**Run it from the repository root.** The page's JavaScript and CSS are served from `./static/`
+relative to the current working directory, so a binary started elsewhere (for example one
+installed with `go install`) serves a page with no styling or behaviour.
+
+**Treat it as a local, single-user tool.** The server has no authentication: `/api/config`
+returns the API key from your `.env`, and the topology page embeds it. Keep the default
+`--web-host localhost` unless you understand that anyone who can reach the port can use
+your key.
 
 ### Web Interface Features
 
 - **Responsive Design**: Works on desktop and mobile devices
-- **Persistent Sessions**: Remembers your selections between visits
+- **Persistent Sessions**: Remembers your org, network and log-level selections between visits (browser localStorage)
 - **RESTful API**: Backend provides JSON APIs for integration
 - **WebSocket Support**: Real-time updates for logs and alerts
 - **Topology Visualization**: Interactive network maps with D3.js
@@ -178,8 +194,8 @@ $ Find-Meraki-Ports-With-MAC.exe --ip 192.168.1.100 --org "My Organization" --ve
 2026-02-19T12:20:45-08:00 [DEBUG] Querying switch: switch2 (XXXX-XXXX-XXXX)
 2026-02-19T12:20:48-08:00 [DEBUG] Live MAC table returned 147 entries for switch2
 ...
-Org,Network,Switch,Serial,Port,MAC,IP,Hostname,LastSeen
-My Organization,Network1,switch6,XXXX-XXXX-XXXX,51,40:a6:b7:a5:3b:e0,192.168.1.100,ITCONSOLE.ci.gardena.ca.us,2026-02-19T15:24:38Z
+Org,Network,Switch,Serial,Port,AggrPorts,MAC,IP,Hostname,LastSeen,Uplink
+My Organization,Network1,switch6,XXXX-XXXX-XXXX,51,,40:a6:b7:a5:3b:e0,192.168.1.100,ITCONSOLE.ci.gardena.ca.us,2026-02-19T15:24:38Z,
 ```
 
 ### MAC formats
@@ -248,6 +264,11 @@ findmac --env .env --mac 00:11:22:33:44:55
 **Output:**
 - --output-format: csv | text | html (default from .env)
 
+**Tuning:**
+- --retry: max API retry attempts on HTTP 429 rate limiting (default 6, or `MERAKI_RETRIES`)
+- --mac-table-poll: live MAC/ARP table poll attempts, 2 s apart (default 15, or `MERAKI_MAC_POLL`)
+- --dns-servers: comma-separated DNS servers for reverse (PTR) hostname lookups (or `DNS_SERVERS`)
+
 **Troubleshooting & Testing:**
 - --list-orgs: list organizations the API key can access
 - --list-networks: list networks per organization
@@ -279,11 +300,13 @@ All output formats include the following columns:
 - Network: Network name  
 - Switch: Switch name
 - Serial: Switch serial number
-- Port: Port name/number
+- Port: Port name/number (`AGGR/n` for a link-aggregation port)
+- AggrPorts: Member ports when Port is an `AGGR/n` port
 - MAC: MAC address
-- IP: IP address (when resolved from --ip flag)
+- IP: IP address (from the --ip lookup, the Meraki clients list, or the switch's ARP table)
 - Hostname: Resolved hostname (when available)
 - Last Seen: Last seen timestamp
+- Uplink: `yes` when the switch reports the port as an uplink — the device is further upstream, not on this port
 
 - csv (default)
 - text
@@ -296,6 +319,8 @@ All output formats include the following columns:
 - IP resolution uses the Meraki clients API to find IP-to-MAC mappings from recent network activity.
 - Hostname resolution performs reverse DNS lookups and may not be available for all IPs.
 - The --ip and --mac flags are mutually exclusive - use one or the other.
+- `--port` matches substrings, so `--port 3` also matches ports 13, 23, 33, ...
+- With `--verbose`, a `DEBUG:` line is printed to stdout before the results, so redirect carefully when capturing CSV.
 
 ## Installation
 
@@ -338,6 +363,19 @@ make build-windows  # Windows only (requires Go cross-compilation)
 ```
 
 Built binaries will be placed in the `bin/` directory.
+
+### Test and lint
+
+```bash
+go build ./...
+go vet ./...
+go test -race ./...        # what CI runs (plus coverage)
+make test                  # go test -v ./...
+make lint                  # go vet + golangci-lint
+```
+
+The tests make no Meraki API calls. `TestResolveHostname` performs real reverse-DNS
+lookups but tolerates failures. `go.mod` declares Go 1.21; CI tests 1.21–1.23.
 
 ## Contributing
 

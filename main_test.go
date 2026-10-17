@@ -26,6 +26,7 @@ import (
 	"Find-Meraki-Ports-With-MAC/pkg/output"
 )
 
+// TestFirstNonEmpty checks that firstNonEmpty returns the first non-blank value, or "" when all are blank.
 func TestFirstNonEmpty(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -59,6 +60,8 @@ func TestFirstNonEmpty(t *testing.T) {
 	}
 }
 
+// TestSelectOrganization checks org selection by name, the not-found error, and that an empty
+// name is an error when more than one org is available.
 func TestSelectOrganization(t *testing.T) {
 	orgs := []meraki.Organization{
 		{ID: "org1", Name: "Test Org 1"},
@@ -103,6 +106,8 @@ func TestSelectOrganization(t *testing.T) {
 	}
 }
 
+// TestSelectNetworks checks that "ALL" returns every network, a name returns exactly one, and an
+// unknown name is an error.
 func TestSelectNetworks(t *testing.T) {
 	networks := []meraki.Network{
 		{ID: "net1", Name: "Network 1"},
@@ -150,6 +155,8 @@ func TestSelectNetworks(t *testing.T) {
 	}
 }
 
+// TestAddResult checks that addResult de-duplicates rows on serial+port+MAC and keeps rows that
+// differ by MAC.
 func TestAddResult(t *testing.T) {
 	index := make(map[string]struct{})
 	var results []output.ResultRow
@@ -182,6 +189,9 @@ func TestAddResult(t *testing.T) {
 	}
 }
 
+// TestResolveHostname checks that ResolveHostname returns ("", nil) for an empty IP and does not
+// panic on invalid or loopback input. It performs real reverse-DNS lookups and only logs
+// their outcome, so it is environment-tolerant.
 func TestResolveHostname(t *testing.T) {
 	// Test with empty IP
 	hostname, err := meraki.ResolveHostname("")
@@ -260,6 +270,7 @@ func TestParseAggrPort(t *testing.T) {
 
 // ── firstNonZeroInt ───────────────────────────────────────────────────────────
 
+// TestFirstNonZeroInt checks that firstNonZeroInt returns the first non-zero value, or 0.
 func TestFirstNonZeroInt(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -284,6 +295,8 @@ func TestFirstNonZeroInt(t *testing.T) {
 
 // ── parseIntEnv ───────────────────────────────────────────────────────────────
 
+// TestParseIntEnv checks that parseIntEnv parses a set integer and returns 0 for invalid, empty
+// and unset variables.
 func TestParseIntEnv(t *testing.T) {
 	t.Setenv("TEST_INT_ENV_42", "42")
 	t.Setenv("TEST_INT_ENV_BAD", "notanint")
@@ -310,6 +323,8 @@ func TestParseIntEnv(t *testing.T) {
 
 // ── resolveEnvFile ────────────────────────────────────────────────────────────
 
+// TestResolveEnvFile_Default checks that, with no --env argument, the env file defaults to
+// ~/.env.find-mac.
 func TestResolveEnvFile_Default(t *testing.T) {
 	// With no --env in os.Args (test runner args won't contain it) the default
 	// should be ~/.env.find-mac
@@ -324,6 +339,7 @@ func TestResolveEnvFile_Default(t *testing.T) {
 	}
 }
 
+// TestResolveEnvFile_FlagEquals checks the --env=<path> form.
 func TestResolveEnvFile_FlagEquals(t *testing.T) {
 	old := os.Args
 	t.Cleanup(func() { os.Args = old })
@@ -335,6 +351,7 @@ func TestResolveEnvFile_FlagEquals(t *testing.T) {
 	}
 }
 
+// TestResolveEnvFile_FlagSpace checks the --env <path> form.
 func TestResolveEnvFile_FlagSpace(t *testing.T) {
 	old := os.Args
 	t.Cleanup(func() { os.Args = old })
@@ -348,6 +365,7 @@ func TestResolveEnvFile_FlagSpace(t *testing.T) {
 
 // ── printVersion ─────────────────────────────────────────────────────────────
 
+// TestPrintVersion checks that --version output names the tool and carries the GPL notice.
 func TestPrintVersion(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -368,6 +386,7 @@ func TestPrintVersion(t *testing.T) {
 
 // ── printUsage ────────────────────────────────────────────────────────────────
 
+// TestPrintUsage checks that --help output mentions the key flags, MERAKI_API_KEY and examples.
 func TestPrintUsage(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -388,6 +407,7 @@ func TestPrintUsage(t *testing.T) {
 
 // ── writeOrganizations / writeNetworksForOrg ──────────────────────────────────
 
+// TestWriteOrganizations checks that --list-orgs output contains every org name and ID.
 func TestWriteOrganizations(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -410,6 +430,8 @@ func TestWriteOrganizations(t *testing.T) {
 	}
 }
 
+// TestWriteNetworksForOrg checks that --list-networks output contains the org and every network
+// name and ID.
 func TestWriteNetworksForOrg(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -433,6 +455,7 @@ func TestWriteNetworksForOrg(t *testing.T) {
 	}
 }
 
+// TestWriteNetworksForOrg_Empty checks the "(no networks)" line for an org without networks.
 func TestWriteNetworksForOrg_Empty(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -450,6 +473,8 @@ func TestWriteNetworksForOrg_Empty(t *testing.T) {
 
 // ── OUI cache ─────────────────────────────────────────────────────────────────
 
+// TestGetManufacturer_CacheHit checks that a cached OUI is returned without an HTTP call. It
+// pre-loads ouiCache so the test never reaches api.macvendors.com.
 func TestGetManufacturer_CacheHit(t *testing.T) {
 	// Pre-populate the cache so no HTTP call is made
 	ouiCache.Store("AA:BB:CC", "TestVendor")
@@ -459,6 +484,7 @@ func TestGetManufacturer_CacheHit(t *testing.T) {
 	}
 }
 
+// TestLookupOUI_EmptyMAC checks that an empty MAC returns "" without a lookup.
 func TestLookupOUI_EmptyMAC(t *testing.T) {
 	got := lookupOUI("")
 	if got != "" {
@@ -466,6 +492,8 @@ func TestLookupOUI_EmptyMAC(t *testing.T) {
 	}
 }
 
+// TestLookupOUI_ShortMAC checks that a MAC with fewer than three octets returns "" without a
+// lookup.
 func TestLookupOUI_ShortMAC(t *testing.T) {
 	got := lookupOUI("AA:BB")
 	if got != "" {

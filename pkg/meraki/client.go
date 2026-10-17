@@ -33,62 +33,107 @@ import (
 	"time"
 )
 
-// Organization represents a Meraki organization.
+// Organization represents a Meraki organization as returned by
+// GET /organizations. Only the fields this tool uses are decoded.
 type Organization struct {
-	ID   string `json:"id"`
+	// ID is the Meraki organization ID used in API paths.
+	ID string `json:"id"`
+	// Name is the human-readable organization name shown in the Dashboard.
 	Name string `json:"name"`
 }
 
-// Network represents a Meraki network.
+// Network represents a Meraki network as returned by
+// GET /organizations/{organizationId}/networks.
 type Network struct {
-	ID   string `json:"id"`
+	// ID is the Meraki network ID (e.g. "L_123..." or "N_123...").
+	ID string `json:"id"`
+	// Name is the human-readable network name shown in the Dashboard.
 	Name string `json:"name"`
 }
 
-// Device represents a Meraki device (switch, access point, etc.).
+// Device represents a Meraki device (switch, access point, etc.) as returned
+// by GET /networks/{networkId}/devices.
 type Device struct {
-	Serial      string `json:"serial"`
-	Name        string `json:"name"`
-	Model       string `json:"model"`
+	// Serial is the device serial number, the key for every /devices/{serial} call.
+	Serial string `json:"serial"`
+	// Name is the user-assigned device name; may be empty.
+	Name string `json:"name"`
+	// Model is the hardware model, e.g. "MS225-48FP" or "C9300-48P".
+	Model string `json:"model"`
+	// ProductType is the Meraki product family, e.g. "switch" or "wireless".
 	ProductType string `json:"productType"`
-	NetworkID   string `json:"networkId"`
+	// NetworkID is the ID of the network the device belongs to.
+	NetworkID string `json:"networkId"`
 }
 
-// Client represents a client connected to a device.
+// Client represents a client connected to a device, as returned by
+// GET /devices/{serial}/clients.
+//
+// The port can arrive in any of three fields depending on device model and
+// firmware, so callers try SwitchportName, Switchport and Port in that order.
 type Client struct {
-	MAC            string `json:"mac"`
-	Switchport     string `json:"switchport"`
+	// MAC is the client MAC address in whatever format the API returns.
+	MAC string `json:"mac"`
+	// Switchport is the switch port the client was seen on.
+	Switchport string `json:"switchport"`
+	// SwitchportName is the port's display name, preferred when present.
 	SwitchportName string `json:"switchportName"`
-	Port           string `json:"port"`
-	LastSeen       string `json:"lastSeen"`
+	// Port is an alternate port field returned by some models.
+	Port string `json:"port"`
+	// LastSeen is the time the client was last seen, as returned by the API.
+	LastSeen string `json:"lastSeen"`
 }
 
-// NetworkClient represents a client at the network level.
+// NetworkClient represents a client at the network level, as returned by
+// GET /networks/{networkId}/clients. It is the source of IP-to-MAC mappings
+// for --ip lookups and of hostname hints (see ClientHostname).
 type NetworkClient struct {
-	MAC                string `json:"mac"`
-	Switchport         string `json:"switchport"`
-	SwitchportName     string `json:"switchportName"`
-	Port               string `json:"port"`
-	LastSeen           string `json:"lastSeen"`
+	// MAC is the client MAC address.
+	MAC string `json:"mac"`
+	// Switchport is the switch port the client was last seen on.
+	Switchport string `json:"switchport"`
+	// SwitchportName is the port's display name, preferred when present.
+	SwitchportName string `json:"switchportName"`
+	// Port is an alternate port field returned by some models.
+	Port string `json:"port"`
+	// LastSeen is the time the client was last seen, as returned by the API.
+	LastSeen string `json:"lastSeen"`
+	// RecentDeviceSerial is the serial of the device the client was last seen on.
 	RecentDeviceSerial string `json:"recentDeviceSerial"`
-	RecentDeviceName   string `json:"recentDeviceName"`
-	IP                 string `json:"ip"`
-	Hostname           string `json:"hostname"`
-	Description        string `json:"description"`
-	DhcpHostname       string `json:"dhcpHostname"`
-	Notes              string `json:"notes"`
+	// RecentDeviceName is the name of the device the client was last seen on.
+	RecentDeviceName string `json:"recentDeviceName"`
+	// IP is the client's most recent IPv4 address.
+	IP string `json:"ip"`
+	// Hostname is the hostname Meraki reports for the client, if any.
+	Hostname string `json:"hostname"`
+	// Description is the client description; Meraki sometimes fills it with a UUID.
+	Description string `json:"description"`
+	// DhcpHostname is the hostname the client sent in its DHCP request.
+	DhcpHostname string `json:"dhcpHostname"`
+	// Notes is the free-text note an administrator attached to the client.
+	Notes string `json:"notes"`
 }
 
 // MerakiClient is an HTTP client wrapper for the Meraki Dashboard API.
+// Create one with NewClient. It is safe for sequential use; it holds no
+// per-request state.
 type MerakiClient struct {
-	apiKey     string
-	baseURL    string
+	// apiKey is sent as the X-Cisco-Meraki-API-Key header on every request.
+	apiKey string
+	// baseURL is the API root without a trailing slash.
+	baseURL string
+	// maxRetries is the number of attempts doRequest makes on HTTP 429.
 	maxRetries int
-	client     *http.Client
+	// client is the underlying HTTP client (60-second timeout).
+	client *http.Client
 }
 
 // NewClient creates a new Meraki API client.
-// maxRetries controls how many times a 429 response is retried; 0 uses the default of 6.
+//
+// apiKey is the Dashboard API key. baseURL is the API root; "" uses
+// https://api.meraki.com/api/v1 and a trailing slash is trimmed. maxRetries
+// controls how many times a 429 response is retried; 0 or less uses the
+// default of 6. Each HTTP request has a 60-second timeout.
 func NewClient(apiKey, baseURL string, maxRetries int) *MerakiClient {
 	if baseURL == "" {
 		baseURL = "https://api.meraki.com/api/v1"
@@ -107,7 +152,9 @@ func NewClient(apiKey, baseURL string, maxRetries int) *MerakiClient {
 	}
 }
 
-// GetOrganizations retrieves all organizations accessible by the API key.
+// GetOrganizations retrieves all organizations accessible by the API key,
+// following pagination. Entries that fail to decode are skipped silently.
+// It returns an error if any page request fails.
 func (m *MerakiClient) GetOrganizations(ctx context.Context) ([]Organization, error) {
 	raws, err := m.getAllPages(ctx, "/organizations", url.Values{"perPage": []string{"1000"}})
 	if err != nil {
@@ -123,7 +170,9 @@ func (m *MerakiClient) GetOrganizations(ctx context.Context) ([]Organization, er
 	return orgs, nil
 }
 
-// GetNetworks retrieves all networks for a given organization.
+// GetNetworks retrieves all networks for the organization orgID, following
+// pagination. Entries that fail to decode are skipped. It returns an error if
+// any page request fails.
 func (m *MerakiClient) GetNetworks(ctx context.Context, orgID string) ([]Network, error) {
 	path := fmt.Sprintf("/organizations/%s/networks", orgID)
 	raws, err := m.getAllPages(ctx, path, url.Values{"perPage": []string{"1000"}})
@@ -140,7 +189,9 @@ func (m *MerakiClient) GetNetworks(ctx context.Context, orgID string) ([]Network
 	return nets, nil
 }
 
-// GetDevices retrieves all devices in a network.
+// GetDevices retrieves all devices in the network networkID, following
+// pagination. Entries that fail to decode are skipped. It returns an error if
+// any page request fails.
 func (m *MerakiClient) GetDevices(ctx context.Context, networkID string) ([]Device, error) {
 	path := fmt.Sprintf("/networks/%s/devices", networkID)
 	raws, err := m.getAllPages(ctx, path, url.Values{"perPage": []string{"1000"}})
@@ -157,8 +208,10 @@ func (m *MerakiClient) GetDevices(ctx context.Context, networkID string) ([]Devi
 	return devs, nil
 }
 
-// GetDeviceClients retrieves clients connected to a specific device.
-// Uses a 30-day timespan for historical data.
+// GetDeviceClients retrieves clients connected to the device with the given
+// serial. It uses a 30-day timespan so that recently idle devices are still
+// found. Entries that fail to decode are skipped; a failed request returns an
+// error.
 func (m *MerakiClient) GetDeviceClients(ctx context.Context, serial string) ([]Client, error) {
 	path := fmt.Sprintf("/devices/%s/clients", serial)
 	params := url.Values{
@@ -179,8 +232,9 @@ func (m *MerakiClient) GetDeviceClients(ctx context.Context, serial string) ([]C
 	return clients, nil
 }
 
-// GetNetworkClients retrieves all clients across a network.
-// Uses a 30-day timespan for historical data.
+// GetNetworkClients retrieves all clients across the network networkID. It
+// uses a 30-day timespan so that recently idle devices are still found.
+// Entries that fail to decode are skipped; a failed request returns an error.
 func (m *MerakiClient) GetNetworkClients(ctx context.Context, networkID string) ([]NetworkClient, error) {
 	path := fmt.Sprintf("/networks/%s/clients", networkID)
 	params := url.Values{
@@ -201,9 +255,13 @@ func (m *MerakiClient) GetNetworkClients(ctx context.Context, networkID string) 
 	return clients, nil
 }
 
-// CreateMacTableLookup initiates a live MAC table lookup on a device.
-// Returns the macTableId which can be used to poll for results.
-// This is critical for Cisco Catalyst switches managed by Meraki.
+// CreateMacTableLookup initiates a live MAC table lookup on the device with
+// the given serial (POST /devices/{serial}/liveTools/macTable).
+//
+// This is critical for Cisco Catalyst switches managed by Meraki, whose
+// client endpoints often have limited visibility. It returns the macTableId
+// to pass to GetMacTableLookup, or an error if the request fails or the
+// response carries no macTableId.
 func (m *MerakiClient) CreateMacTableLookup(ctx context.Context, serial string) (string, error) {
 	path := fmt.Sprintf("/devices/%s/liveTools/macTable", serial)
 	body, _, err := m.doRequest(ctx, "POST", m.buildURL(path, nil))
@@ -221,7 +279,9 @@ func (m *MerakiClient) CreateMacTableLookup(ctx context.Context, serial string) 
 	return macTableID, nil
 }
 
-// GetMacTableLookup polls for the results of a live MAC table lookup.
+// GetMacTableLookup polls for the results of a live MAC table lookup started
+// by CreateMacTableLookup.
+//
 // Returns:
 //   - entries: array of MAC table entries (when status is "complete")
 //   - status: "pending", "complete", or "failed"
@@ -257,8 +317,10 @@ func (m *MerakiClient) GetMacTableLookup(ctx context.Context, serial, macTableID
 	return macEntries, status, nil
 }
 
-// CreateArpTableLookup initiates a live ARP table lookup on a device.
-// Returns the arpTableId which can be used to poll for results.
+// CreateArpTableLookup initiates a live ARP table lookup on the device with
+// the given serial (POST /devices/{serial}/liveTools/arpTable). It returns the
+// arpTableId to pass to GetArpTableLookup, or an error if the request fails
+// or the response carries no arpTableId.
 func (m *MerakiClient) CreateArpTableLookup(ctx context.Context, serial string) (string, error) {
 	path := fmt.Sprintf("/devices/%s/liveTools/arpTable", serial)
 	body, _, err := m.doRequest(ctx, "POST", m.buildURL(path, nil))
@@ -276,8 +338,10 @@ func (m *MerakiClient) CreateArpTableLookup(ctx context.Context, serial string) 
 	return id, nil
 }
 
-// GetArpTableLookup polls for the results of a live ARP table lookup.
-// Returns entries (map of "ip"→"mac"), status, and any error.
+// GetArpTableLookup polls for the results of a live ARP table lookup started
+// by CreateArpTableLookup. It returns the entries (each a map with "ip" and
+// "mac" keys) once status is "complete"; for any other status the entries are
+// nil. err is non-nil only when the request or JSON decoding fails.
 func (m *MerakiClient) GetArpTableLookup(ctx context.Context, serial, arpTableID string) ([]map[string]interface{}, string, error) {
 	path := fmt.Sprintf("/devices/%s/liveTools/arpTable/%s", serial, arpTableID)
 	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
@@ -343,7 +407,9 @@ func (m *MerakiClient) FetchArpMap(ctx context.Context, serial string, maxPoll i
 }
 
 // getAllPages handles pagination for API endpoints that return arrays.
-// It follows the Link header with rel="next" until all pages are retrieved.
+// It follows the Link header with rel="next" until all pages are retrieved,
+// and returns every array element as raw JSON so callers can decode into
+// their own types. Any failed page aborts the whole call with an error.
 func (m *MerakiClient) getAllPages(ctx context.Context, path string, params url.Values) ([]json.RawMessage, error) {
 	fullURL := m.buildURL(path, params)
 	var all []json.RawMessage
@@ -365,7 +431,8 @@ func (m *MerakiClient) getAllPages(ctx context.Context, path string, params url.
 	return all, nil
 }
 
-// buildURL constructs a full API URL from a path and query parameters.
+// buildURL constructs a full API URL from a path (a leading "/" is added if
+// missing) and optional query parameters.
 func (m *MerakiClient) buildURL(path string, params url.Values) string {
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
@@ -378,8 +445,11 @@ func (m *MerakiClient) buildURL(path string, params url.Values) string {
 }
 
 // doRequest executes an HTTP request with retry logic and rate limit handling.
-// It automatically retries on 429 (Too Many Requests) with exponential backoff.
-// Returns the response body, next page URL (from Link header), and any error.
+// It automatically retries on 429 (Too Many Requests), sleeping for the
+// Retry-After header when present and otherwise for 1s, 2s, 3s, ... (linear
+// backoff), up to maxRetries attempts. Transport errors are not retried.
+// Returns the response body, next page URL (from Link header), and any error;
+// a status of 300 or above is returned as an error containing the body.
 func (m *MerakiClient) doRequest(ctx context.Context, method, fullURL string) ([]byte, string, error) {
 	for attempt := 0; attempt < m.maxRetries; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, method, fullURL, nil)
@@ -428,14 +498,20 @@ var hostOverrides map[string]map[string]string
 
 // hostOverrideEntry is the JSON shape for a single HOST_OVERRIDES entry.
 type hostOverrideEntry struct {
-	Org      string `json:"org"`
-	Net      string `json:"net"`
-	IP       string `json:"ip"`
+	// Org is the organization name the entry applies to, or "*" / "" for any.
+	Org string `json:"org"`
+	// Net is the network name the entry applies to, or "*" / "" for any.
+	Net string `json:"net"`
+	// IP is the address being mapped.
+	IP string `json:"ip"`
+	// Hostname is the name to report for IP.
 	Hostname string `json:"hostname"`
 }
 
 // SetHostOverrides installs a scoped static IP-to-hostname map for sites where
 // the internal DNS server is not reachable from the machine running this tool.
+// It replaces any previously installed map. Invalid JSON, or a list with no
+// usable entries, clears the map silently (no error is reported).
 //
 // Format: JSON array of objects with "org", "net", "ip", and "hostname" fields.
 // Use "*" as a wildcard for "org" or "net". Omitted "org"/"net" fields default to "*".
@@ -527,8 +603,11 @@ func SetDNSServers(servers []string) {
 	customDNSServers = cleaned
 }
 
-// ResolveHostname performs reverse DNS lookup on an IP address.
-// Returns the hostname or empty string if lookup fails.
+// ResolveHostname performs a reverse DNS (PTR) lookup on an IP address, with
+// a 5-second overall timeout, using the servers set by SetDNSServers or the
+// system resolver when none are set. It returns the first name with its
+// trailing dot removed, or "" and the lookup error when it fails. An empty ip
+// returns "", nil.
 func ResolveHostname(ip string) (string, error) {
 	if ip == "" {
 		return "", nil
@@ -588,7 +667,9 @@ func isUUIDLike(s string) bool {
 }
 
 // ClientHostname returns the best available hostname for a NetworkClient.
-// Priority: Notes > Hostname (API field) > DhcpHostname > Description (if not UUID-like)
+// Priority: Notes > Hostname (API field) > DhcpHostname > Description (if not UUID-like).
+// Notes wins because it is what an administrator typed by hand. Returns "" if
+// none is set.
 func ClientHostname(nc NetworkClient) string {
 	if nc.Notes != "" {
 		return nc.Notes
@@ -605,17 +686,25 @@ func ClientHostname(nc NetworkClient) string {
 	return ""
 }
 
-// SwitchPort represents the configuration of a Meraki switch port.
+// SwitchPort represents the configuration of a Meraki switch port, as
+// returned by GET /devices/{serial}/switch/ports/{portId}.
 type SwitchPort struct {
-	Number    interface{} `json:"number"` // may be int or string depending on switch model
-	Name      string      `json:"name"`
-	Type      string      `json:"type"`      // "access" or "trunk"
-	Vlan      int         `json:"vlan"`      // access VLAN (access ports)
-	VoiceVlan int         `json:"voiceVlan"` // voice VLAN (ignored here)
+	// Number may be int or string depending on switch model.
+	Number interface{} `json:"number"` // may be int or string depending on switch model
+	// Name is the port's configured name.
+	Name string `json:"name"`
+	// Type is the port mode: "access" or "trunk".
+	Type string `json:"type"` // "access" or "trunk"
+	// Vlan is the access VLAN (access ports) or native VLAN (trunk ports).
+	Vlan int `json:"vlan"` // access VLAN (access ports)
+	// VoiceVlan is the voice VLAN; decoded but not used by this tool.
+	VoiceVlan int `json:"voiceVlan"` // voice VLAN (ignored here)
 }
 
 // GetSwitchPort retrieves the configuration for a single switch port.
-// portID is the port number/name as a string (e.g. "24", "1").
+// portID is the port number/name as a string (e.g. "24", "1"). It returns an
+// error if the request fails (for example, for virtual AGGR ports, which have
+// no entry) or the body cannot be decoded.
 func (m *MerakiClient) GetSwitchPort(ctx context.Context, serial, portID string) (*SwitchPort, error) {
 	path := fmt.Sprintf("/devices/%s/switch/ports/%s", serial, portID)
 	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
@@ -629,9 +718,13 @@ func (m *MerakiClient) GetSwitchPort(ctx context.Context, serial, portID string)
 	return &sp, nil
 }
 
-// SwitchPortFull holds the full port detail needed to resolve link-aggregation membership.
+// SwitchPortFull holds the full port detail needed to resolve link-aggregation
+// membership. It is currently unused: GetSwitchPortMembers decodes raw maps
+// instead, so that alternate field names can be tried.
 type SwitchPortFull struct {
-	PortID            string `json:"portId"`
+	// PortID is the switch port ID.
+	PortID string `json:"portId"`
+	// LinkAggregationID is the LAG the port belongs to, if any.
 	LinkAggregationID string `json:"linkAggregationId"` // e.g. "AGGR/1" when port is a LAG member
 }
 
@@ -678,29 +771,42 @@ func (m *MerakiClient) GetSwitchPortMembers(ctx context.Context, serial string) 
 
 // TopologyNode represents a device node in the network link-layer topology.
 type TopologyNode struct {
-	MAC         string `json:"mac"`
-	Type        string `json:"type"`
-	Name        string `json:"name"`
-	Serial      string `json:"serial"`
+	// MAC is the device MAC address.
+	MAC string `json:"mac"`
+	// Type is the device type reported by the topology API.
+	Type string `json:"type"`
+	// Name is the device name.
+	Name string `json:"name"`
+	// Serial is the device serial; empty for devices Meraki does not manage.
+	Serial string `json:"serial"`
+	// DerivedRole is the role Meraki infers for the device in the topology.
 	DerivedRole string `json:"derivedRole"`
 }
 
 // TopologyEnd represents one end of a topology link.
 type TopologyEnd struct {
+	// Device is the device at this end of the link.
 	Device TopologyNode `json:"device"`
-	IpAddr string       `json:"ipAddr"`
-	PortId string       `json:"portId"` // switch port ID on this side of the link
+	// IpAddr is the device's IP address on this link, if reported.
+	IpAddr string `json:"ipAddr"`
+	// PortId is the switch port ID on this side of the link. On some firmware
+	// it is not populated.
+	PortId string `json:"portId"` // switch port ID on this side of the link
 }
 
 // TopologyLink represents a connection between two devices.
 type TopologyLink struct {
-	LastUpdatedAt string        `json:"lastUpdatedAt"`
-	Ends          []TopologyEnd `json:"ends"`
+	// LastUpdatedAt is when Meraki last observed the link.
+	LastUpdatedAt string `json:"lastUpdatedAt"`
+	// Ends holds the two ends of the link (normally exactly two).
+	Ends []TopologyEnd `json:"ends"`
 }
 
 // BuildUplinkPortSet returns a map of serial → set of portIDs that are
 // inter-device (uplink) ports, derived from the link-layer topology.
 // Only ends that connect two switches (both ends have a serial) are included.
+// A nil topo yields an empty map. It is not called by the current lookup
+// paths, which use GetDeviceUplinkPorts instead.
 func BuildUplinkPortSet(topo *TopologyData) map[string]map[string]struct{} {
 	uplinks := make(map[string]map[string]struct{})
 	if topo == nil {
@@ -731,11 +837,15 @@ func BuildUplinkPortSet(topo *TopologyData) map[string]map[string]struct{} {
 
 // TopologyData holds nodes and links for a network's link-layer topology.
 type TopologyData struct {
+	// Nodes are kept as raw maps because their shape varies by device type.
 	Nodes []map[string]interface{} `json:"nodes"`
-	Links []TopologyLink           `json:"links"`
+	// Links are the device-to-device connections.
+	Links []TopologyLink `json:"links"`
 }
 
-// GetNetworkTopology retrieves the link-layer topology for a network.
+// GetNetworkTopology retrieves the link-layer topology for a network
+// (GET /networks/{networkId}/topology/linkLayer). It returns an error if the
+// request fails or the body cannot be decoded.
 func (m *MerakiClient) GetNetworkTopology(ctx context.Context, networkID string) (*TopologyData, error) {
 	path := fmt.Sprintf("/networks/%s/topology/linkLayer", networkID)
 	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
@@ -749,7 +859,8 @@ func (m *MerakiClient) GetNetworkTopology(ctx context.Context, networkID string)
 	return &result, nil
 }
 
-// GetNetworkTopologyRaw retrieves the raw JSON bytes for the link-layer topology of a network.
+// GetNetworkTopologyRaw retrieves the raw JSON bytes for the link-layer
+// topology of a network. It is used by the /api/debug/network handler.
 func (m *MerakiClient) GetNetworkTopologyRaw(ctx context.Context, networkID string) ([]byte, error) {
 	path := fmt.Sprintf("/networks/%s/topology/linkLayer", networkID)
 	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
@@ -757,15 +868,19 @@ func (m *MerakiClient) GetNetworkTopologyRaw(ctx context.Context, networkID stri
 }
 
 // GetSwitchPortsRaw retrieves the raw JSON bytes for all ports on a switch.
+// It is used by the /api/debug/network handler.
 func (m *MerakiClient) GetSwitchPortsRaw(ctx context.Context, serial string) ([]byte, error) {
 	path := fmt.Sprintf("/devices/%s/switch/ports", serial)
 	body, _, err := m.doRequest(ctx, "GET", m.buildURL(path, nil))
 	return body, err
 }
 
-// NetworkLinkAggregation represents a network-level link aggregation group.
+// NetworkLinkAggregation represents a network-level link aggregation group,
+// as returned by GET /networks/{networkId}/switch/linkAggregations.
 type NetworkLinkAggregation struct {
-	ID          string `json:"id"`
+	// ID is the Meraki link aggregation ID.
+	ID string `json:"id"`
+	// SwitchPorts lists the member ports, each identified by switch serial and port ID.
 	SwitchPorts []struct {
 		Serial string `json:"serial"`
 		PortID string `json:"portId"`
@@ -829,11 +944,14 @@ func (m *MerakiClient) GetNetworkLinkAggregations(ctx context.Context, networkID
 	return result
 }
 
-// LLDPCDPData holds the LLDP/CDP neighbor data for a device.
+// LLDPCDPData holds the LLDP/CDP neighbor data for a device. It is currently
+// unused: uplink detection moved to the switch port statuses API (see
+// GetDeviceUplinkPorts).
 type LLDPCDPData struct {
 	// Ports maps port ID string → map of protocol ("lldp"/"cdp") → neighbor info
-	Ports     map[string]map[string]interface{} `json:"ports"`
-	SourceMac string                            `json:"sourceMac"`
+	Ports map[string]map[string]interface{} `json:"ports"`
+	// SourceMac is the MAC address of the device reporting the neighbors.
+	SourceMac string `json:"sourceMac"`
 }
 
 // GetDeviceUplinkPorts returns the set of port IDs on the given switch that are
@@ -867,6 +985,12 @@ func (m *MerakiClient) GetDeviceUplinkPorts(ctx context.Context, serial string) 
 
 // ResolveIPToMAC resolves an IP address to MAC address by querying Meraki clients API.
 // Searches across multiple networks and returns the MAC, network ID, and hostname.
+//
+// The hostname comes from a reverse DNS lookup first and, if that is empty,
+// from ClientHostname of the matching client. Networks whose client list
+// cannot be fetched are skipped silently. orgID is currently unused. If no
+// network has a client with exactly this IP, it returns an error (with the
+// DNS hostname, if any).
 func (c *MerakiClient) ResolveIPToMAC(ctx context.Context, orgID string, networks []Network, ip string) (mac string, networkID string, hostname string, err error) {
 	// First, attempt hostname resolution
 	hostname, _ = ResolveHostname(ip) // Ignore error, hostname is optional
@@ -891,7 +1015,8 @@ func (c *MerakiClient) ResolveIPToMAC(ctx context.Context, orgID string, network
 	return "", "", hostname, errors.New("IP address not found in any network")
 }
 
-// parseLinkNext extracts the next page URL from a Link header.
+// parseLinkNext extracts the next page URL from a Link header, or returns ""
+// when there is no rel="next" entry.
 // Example Link header: <https://api.meraki.com/api/v1/...?page=2>; rel="next"
 func parseLinkNext(linkHeader string) string {
 	if linkHeader == "" {

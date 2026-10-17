@@ -1,0 +1,338 @@
+# features.yaml — canonical feature-status manifest for Find-Meraki-Ports-With-MAC.
+#
+# How this relates to the other tracking files:
+#   VERSIONS.md   — what shipped in which release (CHANGELOG.md has the user-facing detail)
+#   WORKLOG.md    — the narrative: what was done and WHY
+#   features.yaml — this file: one entry per feature, stable ids, current status
+#
+# Schema
+# ------
+# version: integer — bump on any breaking schema change.
+# updated: YYYY-MM-DD — last time this file changed.
+# components: list of { id, name, path } — the surfaces a feature can touch.
+# features: list of entries:
+#   id:          "FEAT-NNNN" (zero-padded, stable, never renumbered, never reused).
+#   title:       short human-readable title
+#   description: 1-3 sentences, reader-facing where possible
+#   components:  list of component ids
+#   status:      planned | in-dev | in-test | complete | deferred
+#                `complete` means it works, not that it merged. A feature that landed
+#                and fails on real input is `in-dev`, with the failure in notes:.
+#   release:     the VERSIONS.md release that LAST changed this feature
+#   added:       YYYY-MM-DD the feature first landed
+#   updated:     YYYY-MM-DD its most recent change
+#   notes:       free-form — evidence, follow-ups, caveats.
+#
+# Every entry was reconstructed on 2026-10-16 from CHANGELOG.md, the git history and the code
+# (INFERRED), not from Kent. Evidence available that night: the unit tests, and CLI runs against
+# a local fake Meraki API (MERAKI_BASE_URL pointed at 127.0.0.1). Nothing was run against the real
+# Meraki API, so anything whose correctness depends on real API responses is `in-test`, not
+# `complete`, until Kent confirms it.
+
+version: 1
+updated: 2026-10-16
+
+components:
+  - id: cli
+    name: CLI entry point, flags, lookup loop
+    path: main.go
+  - id: web
+    name: Interactive web server, handlers, demo mode
+    path: web.go
+  - id: ui
+    name: Browser UI (JS/CSS)
+    path: static
+  - id: lookup
+    name: Shared lookup helpers (AGGR, uplink, web resolve)
+    path: resolve.go
+  - id: api
+    name: Meraki API client
+    path: pkg/meraki
+  - id: mac
+    name: MAC parsing and patterns
+    path: pkg/macaddr
+  - id: output
+    name: Output writers
+    path: pkg/output
+  - id: build
+    name: Build, release and CI
+    path: Makefile
+
+features:
+  - id: FEAT-0001
+    title: Find switch port by MAC (CLI)
+    description: >
+      `--mac` searches every switch in the selected network(s) using the network clients list,
+      the live MAC table, and the device clients list as a fallback, and prints one row per
+      switch/port where the MAC was seen.
+    components: [cli, api, lookup]
+    status: in-test
+    release: "1.3.1"
+    added: 2026-02-13
+    updated: 2026-03-02
+    notes: >
+      INFERRED. Ran end to end on 2026-10-16 against a local fake API (two switches, one AGGR
+      port) and produced the expected rows. Not run against the real Meraki API in this pass.
+
+  - id: FEAT-0002
+    title: MAC formats and wildcard patterns
+    description: >
+      Accepts colon, dash, dotted and bare MACs, `*` for one byte, and bracket nibble patterns
+      such as `[1-4][0-f]`.
+    components: [mac]
+    status: in-dev
+    release: "1.0.0"
+    added: 2026-02-13
+    updated: 2026-02-13
+    notes: >
+      Exact formats and `*` are unit-tested and work. Bracket RANGES do not: separators are
+      stripped before the pattern is compiled, so the `-` inside `[1-4]` is removed and the
+      README example `08:f1:b3:6f:9c:[1-4][0-f]` never matches (verified 2026-10-16).
+
+  - id: FEAT-0003
+    title: CSV, text and HTML output
+    description: >
+      `--output-format csv|text|html`; all three carry Org, Network, Switch, Serial, Port,
+      AggrPorts, MAC, IP, Hostname, LastSeen and Uplink.
+    components: [output, cli]
+    status: complete
+    release: "1.3.0"
+    added: 2026-02-13
+    updated: 2026-03-02
+    notes: Unit-tested, and CSV/text seen in the 2026-10-16 fake-API runs. HTML escapes every cell.
+
+  - id: FEAT-0004
+    title: Org, network, switch and port filters
+    description: >
+      `--org`, `--network` (name or ALL), `--switch` (case-insensitive substring) and `--port`
+      narrow the search; a key with one org auto-selects it.
+    components: [cli]
+    status: in-test
+    release: "1.2.0"
+    added: 2026-02-13
+    updated: 2026-02-26
+    notes: >
+      INFERRED. Selection and filter helpers are unit-tested. `--port` is a substring match, so
+      `--port 3` also matches 13, 23, ... (documented in README).
+
+  - id: FEAT-0005
+    title: Troubleshooting flags
+    description: >
+      `--list-orgs`, `--list-networks`, `--test-api` and `--test-full-table` (dump the
+      forwarding table, filters applied).
+    components: [cli, api]
+    status: in-test
+    release: "1.0.0"
+    added: 2026-02-13
+    updated: 2026-02-13
+    notes: INFERRED. Output helpers unit-tested; not run against the real API in this pass.
+
+  - id: FEAT-0006
+    title: Find switch port by IP
+    description: >
+      `--ip` resolves an IP to a MAC from the network clients list, then searches as for
+      `--mac`.
+    components: [cli, api]
+    status: in-test
+    release: "1.1.0"
+    added: 2026-02-19
+    updated: 2026-02-19
+    notes: INFERRED. Worked against the local fake API on 2026-10-16.
+
+  - id: FEAT-0007
+    title: Hostnames (reverse DNS, DNS servers, HOST_OVERRIDES)
+    description: >
+      Fills the Hostname column from Meraki client data, `HOST_OVERRIDES` (JSON, scoped by
+      org/network with wildcards) or reverse DNS, optionally via `--dns-servers`.
+    components: [api, cli, lookup]
+    status: in-test
+    release: "1.2.0"
+    added: 2026-02-19
+    updated: 2026-02-28
+    notes: INFERRED. HOST_OVERRIDES parsing and priority are unit-tested; DNS paths not exercised.
+
+  - id: FEAT-0008
+    title: Live MAC table lookup (Catalyst support)
+    description: >
+      Starts a live MAC table job on each switch and polls it (`--mac-table-poll`, 2 s each);
+      the only reliable source on Meraki-managed Catalyst switches.
+    components: [api, cli, lookup]
+    status: in-test
+    release: "1.0.0"
+    added: 2026-02-13
+    updated: 2026-02-26
+    notes: INFERRED. Exercised against the fake API only.
+
+  - id: FEAT-0009
+    title: IP fill-in from live ARP table
+    description: >
+      When a found MAC has no IP in the clients list, runs a live ARP table lookup on that
+      switch to fill the IP column.
+    components: [api, cli, lookup]
+    status: in-test
+    release: "1.2.0"
+    added: 2026-02-26
+    updated: 2026-02-26
+    notes: INFERRED. Not exercised in this pass.
+
+  - id: FEAT-0010
+    title: Link-aggregation (AGGR) member ports
+    description: >
+      Reports `AGGR/n` ports with their member ports, from the MAC table string or the network
+      link aggregations API.
+    components: [lookup, api]
+    status: in-test
+    release: "1.3.0"
+    added: 2026-03-02
+    updated: 2026-03-02
+    notes: >
+      INFERRED. Parsing unit-tested; members came out right against the fake API. The
+      AGGR/0, AGGR/1 numbering is assumed to follow the order of the linkAggregations list.
+
+  - id: FEAT-0011
+    title: Uplink detection
+    description: >
+      Flags ports the switch reports as uplinks (switch port statuses `isUplink`), so a MAC seen
+      on an uplink is not mistaken for the device's access port.
+    components: [lookup, api, ui]
+    status: in-dev
+    release: "1.3.0"
+    added: 2026-03-02
+    updated: 2026-03-02
+    notes: >
+      Web path correct by inspection. CLI path: a MAC found in the live MAC table on an AGGR port
+      whose member is an uplink is NOT flagged (seen 2026-10-16 against the fake API) because that
+      branch checks the AGGR ID itself rather than its members.
+
+  - id: FEAT-0012
+    title: Port mode and VLAN
+    description: >
+      Looks up access/trunk mode and VLAN from the switch port API (from the first member for
+      AGGR ports). Shown in the web UI; not in CLI output.
+    components: [lookup, api, ui]
+    status: in-test
+    release: "1.3.0"
+    added: 2026-02-26
+    updated: 2026-03-02
+    notes: INFERRED.
+
+  - id: FEAT-0013
+    title: Interactive web UI
+    description: >
+      `--interactive` serves a local single-page UI: key entry or `.env` key, org/network
+      selection (including All Networks), lookup, sortable results, CSV/JSON export, live logs.
+    components: [web, ui, lookup]
+    status: in-test
+    release: "1.3.0"
+    added: 2026-02-19
+    updated: 2026-03-02
+    notes: >
+      INFERRED. Not launched in this pass (it opens the system browser). Static files are served
+      from ./static relative to the working directory, so it only works when started from the
+      repo root.
+
+  - id: FEAT-0014
+    title: Topology view
+    description: >
+      A D3 force graph of the network's devices with the found switch (and, for access ports,
+      the found device) highlighted.
+    components: [web, ui]
+    status: in-test
+    release: "1.3.1"
+    added: 2026-02-19
+    updated: 2026-03-03
+    notes: INFERRED. Loads D3 from d3js.org. Not exercised in this pass.
+
+  - id: FEAT-0015
+    title: Demo mode (--test-data)
+    description: >
+      Serves the web UI with fixed, sanitised demo data and simulated live logs; no API key and
+      no Meraki calls.
+    components: [web, ui]
+    status: in-test
+    release: "1.3.0"
+    added: 2026-03-02
+    updated: 2026-03-02
+    notes: INFERRED. The README screenshot was made with it; not launched in this pass.
+
+  - id: FEAT-0016
+    title: Manufacturer lookup
+    description: >
+      Shows the vendor for a MAC's OUI in the web UI, from api.macvendors.com, cached per
+      process.
+    components: [web]
+    status: in-test
+    release: "1.2.0"
+    added: 2026-02-19
+    updated: 2026-03-02
+    notes: >
+      INFERRED. Cache path unit-tested; the online lookup was not exercised. Failed lookups
+      (including rate limiting) are cached as empty until restart.
+
+  - id: FEAT-0017
+    title: .env configuration (--env, ~/.env.find-mac)
+    description: >
+      Reads settings from `~/.env.find-mac` (created with commented stubs on first run) or the
+      file named by `--env`; real environment variables take precedence over the file.
+    components: [cli]
+    status: complete
+    release: "1.3.2"
+    added: 2026-02-13
+    updated: 2026-03-03
+    notes: >
+      Seen working 2026-10-16: a fresh HOME got the stub file, and the missing-key error named
+      it. Path resolution is unit-tested.
+
+  - id: FEAT-0018
+    title: Version and build metadata
+    description: >
+      `--version` prints version, commit, build time, Go version, repository and licence; the
+      build scripts inject the first three with -ldflags.
+    components: [cli, build]
+    status: complete
+    release: "1.2.0"
+    added: 2026-02-13
+    updated: 2026-03-03
+    notes: >
+      Seen working 2026-10-16. GoVersion is never injected and always prints go1.21; the version
+      number differs between Makefile (1.2.0), the build scripts (1.3.1) and CI (1.0.0).
+
+  - id: FEAT-0019
+    title: Cross-platform static builds and release script
+    description: >
+      Makefile, build.sh and build.ps1 build six static binaries (windows/darwin/linux x
+      amd64/arm64); release.sh publishes them as a GitHub release.
+    components: [build]
+    status: in-test
+    release: "1.3.1"
+    added: 2026-02-13
+    updated: 2026-03-03
+    notes: INFERRED. release.sh not run (it publishes).
+
+  - id: FEAT-0020
+    title: GPL header and no-inline-asset CI gate
+    description: >
+      copyright_test.go checks every .go file for the GPL header and rejects inline CSS/JS in Go
+      templates.
+    components: [build]
+    status: in-dev
+    release: "1.3.1"
+    added: 2026-03-03
+    updated: 2026-03-03
+    notes: >
+      The tests pass but check nothing: the directory walk skips "." itself (it is treated as a
+      hidden directory), so no file is ever opened (found 2026-10-16).
+
+  - id: FEAT-0021
+    title: Alerts and log history endpoints
+    description: >
+      `/api/alerts` and `/api/logs` for alert monitoring and log history in the web UI.
+    components: [web]
+    status: planned
+    release: "1.2.0"
+    added: 2026-02-19
+    updated: 2026-02-19
+    notes: >
+      INFERRED from an earlier README claim of "Alert Monitoring". Only stubs exist; both return
+      empty lists and nothing calls them. Kent to decide whether this is wanted or should be
+      deferred.

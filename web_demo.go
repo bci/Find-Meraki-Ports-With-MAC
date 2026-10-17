@@ -13,6 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+// This file holds the --test-data handlers, which serve fixed, sanitised demo
+// data so the UI can be shown or screenshotted without an API key. No Meraki
+// API calls are made; the only outbound call is the OUI lookup for MACs other
+// than the demo MAC.
+
 package main
 
 import (
@@ -27,14 +32,22 @@ import (
 // Shared constants used by all demo handlers and testDemoResults.
 // No API key is required and no real API calls are made.
 const (
-	demoMAC      = "a4:c3:f0:85:1d:3e"
-	demoIP       = "10.10.1.42"
+	// demoMAC is the MAC pre-filled and resolved in demo mode.
+	demoMAC = "a4:c3:f0:85:1d:3e"
+	// demoIP is the IP reported for every demo result.
+	demoIP = "10.10.1.42"
+	// demoHostname is the hostname reported for every demo result.
 	demoHostname = "laptop-jsmith.acme.local"
-	demoOrg      = "Acme Corporation"
-	demoMfr      = "Apple"
-	demoOUI      = "a4:c3:f0" // real OUI is Intel; we override to Apple in demo
+	// demoOrg is the single demo organization name.
+	demoOrg = "Acme Corporation"
+	// demoMfr is the manufacturer shown for the demo MAC.
+	demoMfr = "Apple"
+	// demoOUI is the OUI of demoMAC.
+	demoOUI = "a4:c3:f0" // real OUI is Intel; we override to Apple in demo
 )
 
+// handleTestValidateKey is the demo /api/validate-key: it accepts any key and
+// returns a single demo organization.
 func handleTestValidateKey(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -44,6 +57,9 @@ func handleTestValidateKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleTestGetConfig is the demo /api/config: it returns a placeholder key,
+// the demo org, CLI presets (defaulting to demoMAC and "ALL") and
+// testData=true, which makes the UI auto-resolve on load.
 func handleTestGetConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -56,6 +72,9 @@ func handleTestGetConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleTestGetManufacturer is the demo /api/manufacturer. It returns demoMfr
+// for the demo OUI (and for MACs shorter than 8 characters) and otherwise
+// performs the real OUI lookup.
 func handleTestGetManufacturer(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	mac := r.URL.Query().Get("mac")
@@ -68,6 +87,8 @@ func handleTestGetManufacturer(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"manufacturer": vendor})
 }
 
+// handleTestGetNetworks is the demo /api/networks: it returns four fixed
+// networks regardless of the query.
 func handleTestGetNetworks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -192,6 +213,10 @@ func testDemoResults(mac string) []map[string]interface{} {
 	}
 }
 
+// handleTestResolve is the demo /api/resolve. It returns testDemoResults for
+// the requested MAC (or demoMAC) immediately, and in a goroutine streams a
+// scripted sequence of log lines to the WebSocket hub, 120 ms apart, to mimic
+// a live scan. A malformed body is ignored and treated as an empty request.
 func handleTestResolve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var req struct {

@@ -26,6 +26,8 @@ import (
 
 // NormalizeExactMac normalizes a MAC address to a 12-character lowercase hex string
 // without separators. Accepts colon, dot, or no separators.
+// Dashes are stripped as well, and separators may appear anywhere, so
+// "0011.2233.4455" and "00-11-22-33-44-55" are both accepted.
 // Returns an error if the input is not a valid MAC address.
 func NormalizeExactMac(input string) (string, error) {
 	clean := strings.Map(func(r rune) rune {
@@ -66,6 +68,9 @@ func FormatMacColon(clean string) string {
 // NormalizePatternInput normalizes a MAC pattern by removing separators
 // but preserving wildcards (*) and bracket patterns ([...]).
 // Note: * remains as *, representing one byte (2 hex chars)
+// The result is uppercased. Because "-" is treated as a separator, a range
+// such as "[1-4]" becomes "[14]" here, which matches only 1 or 4; see
+// BuildMacMatcher.
 func NormalizePatternInput(input string) string {
 	var b strings.Builder
 	for _, r := range input {

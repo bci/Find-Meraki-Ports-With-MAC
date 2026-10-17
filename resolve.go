@@ -13,6 +13,9 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+// This file holds the lookup used by the web interface (resolveDevices) and
+// the AGGR/uplink helpers shared with the CLI path in main.go.
+
 package main
 
 import (
@@ -149,6 +152,17 @@ func isPortUplink(portID string, aggrMembers []string, uplinkSet map[string]stru
 	return false
 }
 
+// resolveDevices runs one MAC or IP lookup for the web interface, in the
+// single network whose ID is in cfg.NetworkName (the web path passes network
+// IDs, not names, in that field).
+//
+// When cfg.OrgID is set it fetches networks only for that org (fast path);
+// otherwise it searches every org the key can see for the network ID. If
+// ipAddr is non-empty it is resolved to a MAC first and macAddr is ignored;
+// otherwise macAddr may be an exact MAC or a wildcard pattern. Unlike the CLI,
+// no --switch or --port filter is applied. It returns an error if the
+// network, org list, IP or device list cannot be resolved; per-switch API
+// failures are logged and skipped.
 func resolveDevices(cfg Config, macAddr, ipAddr string) ([]output.ResultRow, error) {
 	log := newWebLogger()
 
@@ -260,6 +274,16 @@ func resolveDevices(cfg Config, macAddr, ipAddr string) ([]output.ResultRow, err
 	return results, nil
 }
 
+// processSwitchesForResolution searches one network for MACs accepted by
+// matcher and returns de-duplicated result rows. It mirrors the per-network
+// loop in main: network clients first, then a live MAC table lookup per
+// switch, then the device clients list only for switches whose MAC table did
+// not contain a match.
+//
+// hostname, when non-empty (IP mode), is used for every row; otherwise the
+// hostname comes from network-client data, HOST_OVERRIDES or reverse DNS.
+// macTablePoll is the number of 2-second polls for each live MAC/ARP table
+// job. It returns an error only if the network clients list cannot be fetched.
 func processSwitchesForResolution(ctx context.Context, client *meraki.MerakiClient, org *meraki.Organization, network *meraki.Network, switches []meraki.Device, matcher func(string) bool, hostname string, macTablePoll int, log *logger.Logger) ([]output.ResultRow, error) {
 	var results []output.ResultRow
 	resultsIndex := make(map[string]struct{})

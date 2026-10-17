@@ -21,6 +21,7 @@ import (
 	"Find-Meraki-Ports-With-MAC/pkg/meraki"
 )
 
+// TestFilterSwitches checks that only switch devices survive FilterSwitches.
 func TestFilterSwitches(t *testing.T) {
 	devices := []meraki.Device{
 		{Serial: "MS01", Model: "MS120", ProductType: "switch"},
@@ -43,6 +44,8 @@ func TestFilterSwitches(t *testing.T) {
 	}
 }
 
+// TestFilterSwitchesByName checks case-insensitive substring filtering by switch name, including
+// a filter that matches nothing.
 func TestFilterSwitchesByName(t *testing.T) {
 	devices := []meraki.Device{
 		{Serial: "S1", Name: "core-switch-1", Model: "MS250"},
@@ -87,6 +90,7 @@ func TestFilterSwitchesByName(t *testing.T) {
 	}
 }
 
+// TestMatchesSwitchFilter checks case-insensitive substring matching of switch names.
 func TestMatchesSwitchFilter(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -110,6 +114,8 @@ func TestMatchesSwitchFilter(t *testing.T) {
 	}
 }
 
+// TestMatchesPortFilter checks exact and substring port matching. Note the substring rule means
+// filter "3" matches "Gi1/0/3" but also, for example, "13".
 func TestMatchesPortFilter(t *testing.T) {
 	tests := []struct {
 		port   string

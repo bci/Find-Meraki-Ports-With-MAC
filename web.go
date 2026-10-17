@@ -13,6 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+// This file holds the interactive web server: the log broadcast hub, server
+// start-up and routing, the main HTML page and the WebSocket log endpoint.
+// HTTP API handlers live in web_handlers.go (real API) and web_demo.go
+// (--test-data).
+
 package main
 
 import (
@@ -35,13 +40,22 @@ import (
 // wsLogHub collects all log lines produced during web requests and fans them out
 // to every connected WebSocket /ws/logs client.
 
+// logHub is a fan-out of log lines to WebSocket subscribers. Each subscriber
+// gets a buffered channel; a subscriber that falls behind drops lines rather
+// than blocking the logger.
 type logHub struct {
-	mu      sync.Mutex
+	// mu guards clients.
+	mu sync.Mutex
+	// clients is the set of subscriber channels.
 	clients map[chan string]struct{}
 }
 
+// wsLogHub is the process-wide hub that newWebLogger and the demo handlers
+// broadcast to, and that /ws/logs subscribes to.
 var wsLogHub = &logHub{clients: make(map[chan string]struct{})}
 
+// subscribe registers and returns a new subscriber channel buffered for 64
+// lines. The caller must pass it to unsubscribe when done.
 func (h *logHub) subscribe() chan string {
 	ch := make(chan string, 64)
 	h.mu.Lock()
@@ -50,6 +64,8 @@ func (h *logHub) subscribe() chan string {
 	return ch
 }
 
+// unsubscribe removes ch from the hub and closes it. Removal happens under the
+// lock before the close, so broadcast can never send on a closed channel.
 func (h *logHub) unsubscribe(ch chan string) {
 	h.mu.Lock()
 	delete(h.clients, ch)
@@ -57,6 +73,8 @@ func (h *logHub) unsubscribe(ch chan string) {
 	close(ch)
 }
 
+// broadcast sends msg to every subscriber without blocking; subscribers whose
+// buffer is full miss the line.
 func (h *logHub) broadcast(msg string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -71,6 +89,7 @@ func (h *logHub) broadcast(msg string) {
 // wsWriter satisfies io.Writer so logger output can be forwarded to WebSocket clients.
 type wsWriter struct{}
 
+// Write broadcasts p to the hub as one message and always reports success.
 func (wsWriter) Write(p []byte) (int, error) {
 	wsLogHub.broadcast(string(p))
 	return len(p), nil
@@ -81,6 +100,15 @@ func newWebLogger() *logger.Logger {
 	return logger.NewWriter(io.MultiWriter(os.Stderr, wsWriter{}), logger.LevelDebug)
 }
 
+// startWebServer serves the interactive UI on host:port and blocks until the
+// server fails, in which case it logs the error and exits with status 1.
+//
+// It copies the API key and CLI presets from cfg into package variables for
+// the /api/config handler, registers either the real or the --test-data
+// handlers depending on webTestDataMode, and opens the default browser after
+// a short delay. Static assets are served from ./static/ relative to the
+// current working directory, so the binary must be started from the repo
+// root (or a directory containing static/) for the UI to load.
 func startWebServer(cfg Config, host, port string) {
 	webAPIKey = cfg.APIKey
 	webPresetMAC = cfg.MACAddress
@@ -155,7 +183,9 @@ func openBrowser(url string) {
 	_ = cmd.Start()
 }
 
-// handleHome serves the main web application HTML page.
+// handleHome serves the main web application HTML page. The page is static
+// apart from the version string; all behaviour lives in static/js/app.js and
+// all styling in static/css/style.css.
 func handleHome(w http.ResponseWriter, r *http.Request) {
 	tmpl := `<!DOCTYPE html>
 <html lang="en">
@@ -316,10 +346,15 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(tmpl))
 }
 
+// upgrader upgrades /ws/logs requests to WebSocket connections. CheckOrigin
+// accepts every origin.
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+// handleWebSocketLogs upgrades the request to a WebSocket and streams every
+// hub log line to it as a text message until the connection fails. Incoming
+// frames are read and discarded so that pings and close frames are handled.
 func handleWebSocketLogs(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {

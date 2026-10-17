@@ -23,6 +23,7 @@ import (
 // SetHostOverrides
 // ---------------------------------------------------------------------------
 
+// TestSetHostOverrides_Empty checks that an empty string leaves no overrides installed.
 func TestSetHostOverrides_Empty(t *testing.T) {
 	SetHostOverrides("")
 	if hostOverrides != nil {
@@ -30,6 +31,7 @@ func TestSetHostOverrides_Empty(t *testing.T) {
 	}
 }
 
+// TestSetHostOverrides_InvalidJSON checks that invalid JSON leaves no overrides installed.
 func TestSetHostOverrides_InvalidJSON(t *testing.T) {
 	SetHostOverrides("not json at all")
 	if hostOverrides != nil {
@@ -37,6 +39,8 @@ func TestSetHostOverrides_InvalidJSON(t *testing.T) {
 	}
 }
 
+// TestSetHostOverrides_MissingIPOrHostname checks that entries without an ip or hostname are
+// skipped.
 func TestSetHostOverrides_MissingIPOrHostname(t *testing.T) {
 	// Entries without ip or hostname should be silently skipped.
 	SetHostOverrides(`[{"org":"Acme","net":"HQ","ip":"","hostname":"gw"}]`)
@@ -49,6 +53,7 @@ func TestSetHostOverrides_MissingIPOrHostname(t *testing.T) {
 	}
 }
 
+// TestSetHostOverrides_SingleEntry checks that one entry is stored under its "org/net" scope.
 func TestSetHostOverrides_SingleEntry(t *testing.T) {
 	SetHostOverrides(`[{"org":"Acme","net":"HQ","ip":"192.168.1.1","hostname":"gateway"}]`)
 	if hostOverrides == nil {
@@ -62,6 +67,7 @@ func TestSetHostOverrides_SingleEntry(t *testing.T) {
 	}
 }
 
+// TestSetHostOverrides_OmittedOrgNetDefaultToWildcard checks that missing org and net become "*/*".
 func TestSetHostOverrides_OmittedOrgNetDefaultToWildcard(t *testing.T) {
 	SetHostOverrides(`[{"ip":"10.0.0.1","hostname":"mgmt"}]`)
 	if hostOverrides == nil {
@@ -75,6 +81,7 @@ func TestSetHostOverrides_OmittedOrgNetDefaultToWildcard(t *testing.T) {
 	}
 }
 
+// TestSetHostOverrides_OmittedNetDefaultsToWildcard checks that a missing net becomes "org/*".
 func TestSetHostOverrides_OmittedNetDefaultsToWildcard(t *testing.T) {
 	SetHostOverrides(`[{"org":"Acme","ip":"10.0.0.1","hostname":"core"}]`)
 	scope := "Acme/*"
@@ -85,6 +92,7 @@ func TestSetHostOverrides_OmittedNetDefaultsToWildcard(t *testing.T) {
 	}
 }
 
+// TestSetHostOverrides_MultiEntry checks that several entries land in their own scopes.
 func TestSetHostOverrides_MultiEntry(t *testing.T) {
 	SetHostOverrides(`[
 		{"org":"Acme","net":"HQ","ip":"192.168.1.1","hostname":"hq-gw"},
@@ -111,6 +119,7 @@ func TestSetHostOverrides_MultiEntry(t *testing.T) {
 	}
 }
 
+// TestSetHostOverrides_ClearsOldState checks that a later empty call clears earlier overrides.
 func TestSetHostOverrides_ClearsOldState(t *testing.T) {
 	SetHostOverrides(`[{"ip":"1.2.3.4","hostname":"old"}]`)
 	SetHostOverrides("") // should clear
@@ -136,6 +145,7 @@ func setupOverrides(t *testing.T) {
 	]`)
 }
 
+// TestLookupHostOverride_NilMap checks that lookups return "" when no overrides are installed.
 func TestLookupHostOverride_NilMap(t *testing.T) {
 	SetHostOverrides("")
 	if hn := LookupHostOverride("192.168.1.1", "Acme", "HQ"); hn != "" {
@@ -143,6 +153,7 @@ func TestLookupHostOverride_NilMap(t *testing.T) {
 	}
 }
 
+// TestLookupHostOverride_ExactMatch checks that an exact org/net entry wins.
 func TestLookupHostOverride_ExactMatch(t *testing.T) {
 	setupOverrides(t)
 	if hn := LookupHostOverride("192.168.1.1", "Acme", "HQ"); hn != "exact" {
@@ -150,6 +161,7 @@ func TestLookupHostOverride_ExactMatch(t *testing.T) {
 	}
 }
 
+// TestLookupHostOverride_OrgWildcard checks that "org/*" is used when no exact entry exists.
 func TestLookupHostOverride_OrgWildcard(t *testing.T) {
 	// Load only org-wildcard and global entries so exact doesn't win.
 	t.Cleanup(func() { SetHostOverrides("") })
@@ -162,6 +174,7 @@ func TestLookupHostOverride_OrgWildcard(t *testing.T) {
 	}
 }
 
+// TestLookupHostOverride_NetWildcard checks that "*/net" is used when no org-scoped entry exists.
 func TestLookupHostOverride_NetWildcard(t *testing.T) {
 	// Only net-wildcard and global — org doesn't match exactly.
 	t.Cleanup(func() { SetHostOverrides("") })
@@ -174,6 +187,7 @@ func TestLookupHostOverride_NetWildcard(t *testing.T) {
 	}
 }
 
+// TestLookupHostOverride_GlobalFallback checks that "*/*" applies to any org and network.
 func TestLookupHostOverride_GlobalFallback(t *testing.T) {
 	t.Cleanup(func() { SetHostOverrides("") })
 	SetHostOverrides(`[{"org":"*","net":"*","ip":"192.168.1.1","hostname":"global"}]`)
@@ -182,6 +196,7 @@ func TestLookupHostOverride_GlobalFallback(t *testing.T) {
 	}
 }
 
+// TestLookupHostOverride_NoMatch checks that an unknown IP returns "".
 func TestLookupHostOverride_NoMatch(t *testing.T) {
 	setupOverrides(t)
 	if hn := LookupHostOverride("9.9.9.9", "Acme", "HQ"); hn != "" {
@@ -189,6 +204,7 @@ func TestLookupHostOverride_NoMatch(t *testing.T) {
 	}
 }
 
+// TestLookupHostOverride_OrgIsolation checks that an org-scoped entry does not leak to other orgs.
 func TestLookupHostOverride_OrgIsolation(t *testing.T) {
 	// Entry scoped to "Acme/*" should NOT match a different org.
 	t.Cleanup(func() { SetHostOverrides("") })
@@ -198,6 +214,7 @@ func TestLookupHostOverride_OrgIsolation(t *testing.T) {
 	}
 }
 
+// TestLookupHostOverride_Priority checks the full chain: exact > org/* > */net > */*.
 func TestLookupHostOverride_Priority(t *testing.T) {
 	// Verify the full priority chain: exact > org/* > */net > */*
 	setupOverrides(t)

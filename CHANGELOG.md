@@ -173,5 +173,4 @@ For more information, see the [README](README.md) and [repository](https://githu
 [1.3.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.3.0
 [1.2.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.2.0
 [1.1.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.1.0
-[1.0.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.0.0</content>
-<parameter name="filePath">c:\Users\kent.behrends\Documents\GitHub\Find-Meraki-Ports-With-MAC\Find-Meraki-Ports-With-MAC\CHANGELOG.md
+[1.0.0]: https://github.com/bci/Find-Meraki-Ports-With-MAC/releases/tag/v1.0.0

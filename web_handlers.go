@@ -13,6 +13,11 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+// This file holds the HTTP handlers for the interactive web interface when it
+// talks to the real Meraki API. Handlers that take an API key accept it from
+// the request (JSON body or query string); the topology and debug handlers
+// fall back to the key loaded from .env.
+
 package main
 
 import (
@@ -28,6 +33,11 @@ import (
 	"Find-Meraki-Ports-With-MAC/pkg/output"
 )
 
+// handleValidateKey handles POST /api/validate-key with body {"apiKey": "..."}.
+// It checks the key by listing organizations and returns
+// {"organizations": [...]}. A missing or malformed body is a 400; an API
+// failure is reported as {"error": "..."} with status 200, which is what
+// app.js expects.
 func handleValidateKey(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -62,6 +72,9 @@ func handleValidateKey(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleGetConfig handles GET /api/config. It returns the API key loaded from
+// .env (in clear text) and the CLI presets (--mac, --ip, --org, --network) so
+// the UI can skip the key prompt and pre-fill its fields.
 func handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{
@@ -73,6 +86,9 @@ func handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleGetNetworks handles GET /api/networks?orgId=...&apiKey=... and returns
+// {"networks": [...]} for that org. Missing parameters are a 400; an API
+// failure is reported as {"error": "..."} with status 200.
 func handleGetNetworks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -98,6 +114,14 @@ func handleGetNetworks(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleResolve handles POST /api/resolve. The JSON body carries mac or ip,
+// apiKey, orgId, and either networkId or networkIds (used for "All
+// Networks"). It runs resolveDevices once per network, sequentially, and
+// returns {"results": [...]} in the camelCase shape app.js renders, with a
+// manufacturer looked up per row.
+//
+// Networks whose lookup fails are skipped silently, so a request where every
+// network fails returns an empty result list rather than an error.
 func handleResolve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -179,6 +203,8 @@ func handleResolve(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleGetManufacturer handles GET /api/manufacturer?mac=... and returns
+// {"manufacturer": "..."} from the OUI lookup ("" when unknown).
 func handleGetManufacturer(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	mac := r.URL.Query().Get("mac")
@@ -189,6 +215,11 @@ func handleGetManufacturer(w http.ResponseWriter, r *http.Request) {
 // handleTopology serves the D3 force-graph topology page.
 // All CSS and JS are loaded from /static/ — the handler only injects
 // per-request config values into <meta> tags so topology.js can read them.
+//
+// The values come straight from the query string (networkId, orgId, apiKey,
+// highlightSerial, highlightPort, highlightName, portMode, mac, hostname);
+// apiKey falls back to the key loaded from .env. D3 itself is loaded from
+// d3js.org, so the page needs internet access.
 func handleTopology(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	networkID := firstNonEmpty(q.Get("networkId"), "unknown")
@@ -260,6 +291,11 @@ func handleTopology(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(page))
 }
 
+// handleGetTopology handles GET /api/topology?networkId=...[&apiKey=...] and
+// returns {"networkName", "nodes", "links"} for topology.js. It uses the
+// link-layer topology when available and otherwise falls back to a flat list
+// of the network's devices with no links. apiKey falls back to the key loaded
+// from .env. Note networkName is currently set to the network ID.
 func handleGetTopology(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	ctx := r.Context()
@@ -357,12 +393,16 @@ func handleGetTopology(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+// handleGetAlerts handles GET /api/alerts. It is a stub that always returns
+// an empty list; the UI does not call it.
 func handleGetAlerts(w http.ResponseWriter, r *http.Request) {
 	// Stub implementation
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(`{"alerts": []}`))
 }
 
+// handleLogs handles GET /api/logs. It is a stub that always returns an empty
+// list; live logs are delivered over /ws/logs instead.
 func handleLogs(w http.ResponseWriter, r *http.Request) {
 	// Stub implementation
 	w.Header().Set("Content-Type", "application/json")

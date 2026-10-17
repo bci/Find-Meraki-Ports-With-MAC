@@ -20,6 +20,8 @@ import (
 	"testing"
 )
 
+// TestParseAggrPort_Resolve checks that parseAggrPort leaves plain ports and bare AGGR IDs
+// alone and extracts member ports from the embedded "AGGR/n=serial/port,..." form.
 func TestParseAggrPort_Resolve(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -71,6 +73,8 @@ func TestParseAggrPort_Resolve(t *testing.T) {
 	}
 }
 
+// TestIsPortUplink checks direct uplink ports, AGGR ports with and without an uplink member,
+// and empty inputs.
 func TestIsPortUplink(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -130,6 +134,7 @@ func TestIsPortUplink(t *testing.T) {
 	}
 }
 
+// TestResolveAggrPorts_NonAGGR checks that a non-AGGR port returns nil without using the client.
 func TestResolveAggrPorts_NonAGGR(t *testing.T) {
 	// Non-AGGR port: should return nil immediately (no client call needed).
 	cache := map[string]map[string][]string{}
@@ -139,6 +144,8 @@ func TestResolveAggrPorts_NonAGGR(t *testing.T) {
 	}
 }
 
+// TestResolveAggrPorts_EmbeddedMembers checks that embedded member ports are parsed without
+// using the client or the cache.
 func TestResolveAggrPorts_EmbeddedMembers(t *testing.T) {
 	// AGGR port with embedded member list: should parse members without a client call.
 	// The embedded path returns early, so no cache write occurs (and no client call needed).
@@ -154,6 +161,8 @@ func TestResolveAggrPorts_EmbeddedMembers(t *testing.T) {
 	}
 }
 
+// TestResolveAggrPorts_CacheHit checks that a cached serial is answered from the cache without
+// using the client (which is nil here, so a call would panic).
 func TestResolveAggrPorts_CacheHit(t *testing.T) {
 	// Pre-populate the cache; should return cached value without a client call.
 	cache := map[string]map[string][]string{

@@ -14,6 +14,10 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // Package logger provides a simple level-based logging system with file output support.
+//
+// Each line is written as "<RFC3339 timestamp> [<LEVEL>] <message>". The web
+// UI's log console relies on the bracketed level to colour and filter lines,
+// so the format is part of the contract with static/js/app.js.
 package logger
 
 import (
@@ -39,8 +43,11 @@ const (
 )
 
 // Logger provides structured logging with levels and file output.
+// A nil *Logger is valid and discards everything.
 type Logger struct {
-	level  LogLevel
+	// level is the minimum level that is written; lower levels are dropped.
+	level LogLevel
+	// writer receives each formatted line.
 	writer io.Writer
 }
 
@@ -78,11 +85,15 @@ func New(logFile string, level LogLevel) *Logger {
 	return &Logger{level: level, writer: writer}
 }
 
-// NewWriter creates a logger that writes to the provided io.Writer directly.
+// NewWriter creates a logger that writes to the provided io.Writer directly,
+// dropping messages below level. The web server uses it to fan log lines out
+// to stderr and WebSocket clients.
 func NewWriter(w io.Writer, level LogLevel) *Logger {
 	return &Logger{level: level, writer: w}
 }
 
+// logf formats and writes one log line if level is at or above the logger's
+// minimum level. It is a no-op on a nil receiver. Write errors are ignored.
 func (l *Logger) logf(level LogLevel, label string, format string, args ...interface{}) {
 	if l == nil || level < l.level {
 		return

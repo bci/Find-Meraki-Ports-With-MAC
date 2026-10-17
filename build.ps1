@@ -1,8 +1,50 @@
 #!/usr/bin/env pwsh
-# Build script for Find-Meraki-Ports-With-MAC
-# Usage:
-#   .\build.ps1            - run tests + lint, then build .\findmac.exe
-#   .\build.ps1 -package   - same as above, then also build static binaries for all platforms in .\bin
+
+<#
+.SYNOPSIS
+    Build script for Find-Meraki-Ports-With-MAC.
+
+.DESCRIPTION
+    Usage:
+      .\build.ps1            - run tests + lint, then build .\findmac.exe
+      .\build.ps1 -package   - same as above, then also build static binaries for all platforms in .\bin
+
+    Runs "go test -v ./...", "go vet ./..." and, when it is on PATH,
+    "golangci-lint run ./...". It then builds .\findmac.exe for
+    windows/amd64 (on every host OS) with CGO disabled and version metadata
+    injected through -ldflags: main.Version from $Version below, main.Commit
+    from git, and main.BuildTime.
+
+    With -package it also cross-compiles six static binaries
+    (windows/darwin/linux x amd64/arm64) into .\bin\.
+
+    $Version must be kept in step with build.sh, release.sh and the Makefile
+    by hand.
+
+.PARAMETER package
+    Also build the six cross-platform binaries into .\bin\.
+
+.EXAMPLE
+    .\build.ps1
+    Runs tests and lint, then builds .\findmac.exe.
+
+.EXAMPLE
+    .\build.ps1 -package
+    Additionally builds all platform binaries into .\bin\.
+
+.INPUTS
+    None. This script does not accept pipeline input.
+
+.OUTPUTS
+    None. Writes progress to the host and binaries to disk. Exits 1 on the
+    first failing step.
+
+.NOTES
+    Requires go on PATH; git is optional (commit becomes "unknown").
+    $env:GOOS, $env:GOARCH and $env:CGO_ENABLED are modified and left set to
+    the last build's values when the script ends.
+    BuildTime is formatted from local time but carries a "Z" (UTC) suffix.
+#>
 
 param(
     [switch]$package

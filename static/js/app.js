@@ -1,20 +1,88 @@
 // Find-Meraki-Ports-With-MAC - Interactive UI
 
+/**
+ * @module app
+ * @file Single-page UI for the --interactive web server.
+ *
+ * Served at /static/js/app.js and loaded by the page from handleHome (web.go).
+ * It talks to the Go server only: GET /api/config, POST /api/validate-key,
+ * GET /api/networks, POST /api/resolve, GET /api/manufacturer, and the
+ * /ws/logs WebSocket. The API key is held in memory and sent with each
+ * request; org/network/log-level choices persist in localStorage under
+ * "meraki_prefs".
+ */
+
+/**
+ * One organization as returned by /api/validate-key.
+ * @typedef {Object} Org
+ * @property {string} id   Meraki organization ID.
+ * @property {string} name Organization name.
+ */
+
+/**
+ * One network as returned by /api/networks.
+ * @typedef {Object} Network
+ * @property {string} id   Meraki network ID.
+ * @property {string} name Network name.
+ */
+
+/**
+ * One lookup result row as returned by /api/resolve (see handleResolve in
+ * web_handlers.go).
+ * @typedef {Object} Result
+ * @property {string} orgName
+ * @property {string} networkName
+ * @property {string} deviceName    Switch name (serial when unnamed).
+ * @property {string} deviceSerial
+ * @property {string} port          Port ID, e.g. "24" or "AGGR/0".
+ * @property {?string[]} aggrPorts  Member ports of an AGGR port, or null.
+ * @property {string} mac           Colon-separated lowercase MAC.
+ * @property {string} ip
+ * @property {string} hostname
+ * @property {string} lastSeen
+ * @property {string} manufacturer  OUI vendor name, or "".
+ * @property {number} vlan          Access/native VLAN, 0 if unknown.
+ * @property {string} portMode      "access", "trunk" or "".
+ * @property {boolean} isUplink     True when the switch reports the port as an uplink.
+ */
+
+/**
+ * Controller for the whole page: owns UI state, binds DOM events, and talks
+ * to the server. One instance is created on DOMContentLoaded as window._app.
+ */
 class App {
+  /**
+   * Initialise state, restore saved preferences, bind events, open the log
+   * WebSocket and start loading config from the server.
+   */
   constructor() {
+    /** @type {string} Meraki API key in use (from /api/config or typed in). */
     this.apiKey = '';
+    /** @type {Org[]} Organizations visible to the key. */
     this.orgs = [];
+    /** @type {?string} Selected organization ID. */
     this.selectedOrg = null;
+    /** @type {Network[]} Networks of the selected organization. */
     this.networks = [];
+    /** @type {?string} Selected network ID, or "ALL". */
     this.selectedNetwork = null;
+    /** @type {Result[]} Rows from the last resolve. */
     this.results = [];
+    /** @type {?WebSocket} Connection to /ws/logs. */
     this.wsLogs = null;
+    /** @type {string} Minimum log level shown in the console. */
     this.logFilter = 'DEBUG';
+    /** @type {?string} Column key currently sorted on, or null for server order. */
     this._sortCol = null;
+    /** @type {number} Sort direction. */
     this._sortDir = 1; // 1 = asc, -1 = desc
+    /** @type {{mac: string, ip: string, org: string, network: string}} CLI presets from /api/config. */
     this._preset = { mac: '', ip: '', org: '', network: '' };
+    /** @type {boolean} True until the one automatic resolve for presets/demo mode has run. */
     this._autoResolvePending = false;
+    /** @type {boolean} True once preset MAC/IP have been copied into the inputs. */
     this._presetApplied = false;
+    /** @type {boolean} True when the server runs with --test-data. */
     this._testDataMode = false;
 
     this._restorePrefs();
@@ -25,6 +93,11 @@ class App {
 
   // ── Init ──────────────────────────────────────────────────
 
+  /**
+   * Fetch /api/config. If the server has a key, hide the key form and validate
+   * it; otherwise show the key form. Also records CLI presets and demo mode.
+   * @returns {Promise<void>}
+   */
   async _loadConfig() {
     try {
       const res = await fetch('/api/config');
@@ -53,10 +126,20 @@ class App {
     document.getElementById('keySection').classList.remove('hidden');
   }
 
+  /**
+   * Hide the API key card.
+   */
   _hideKeySection() {
     document.getElementById('keySection').classList.add('hidden');
   }
 
+  /**
+   * Validate apiKey via /api/validate-key, fill the organization list, and
+   * select an org: the CLI preset by name, else the saved org, else the only
+   * org. Errors are reported as toasts, not thrown.
+   * @param {string} apiKey Meraki API key to validate.
+   * @returns {Promise<void>}
+   */
   async _validateAndLoadOrgs(apiKey) {
     this._setStatus('Connecting…', 'idle');
     try {
@@ -96,6 +179,9 @@ class App {
     }
   }
 
+  /**
+   * Rebuild the organization dropdown from this.orgs and show it.
+   */
   _populateOrgs() {
     document.getElementById('scopeHint').classList.add('hidden');
     const sel = document.getElementById('orgSelect');
@@ -108,6 +194,12 @@ class App {
     document.getElementById('orgRow').classList.remove('hidden');
   }
 
+  /**
+   * Load networks for orgId into the network dropdown and select one: the CLI
+   * preset by name, else the saved network if it still exists, else "ALL".
+   * @param {string} orgId Organization ID.
+   * @returns {Promise<void>}
+   */
   async _loadNetworks(orgId) {
     const sel = document.getElementById('networkSelect');
     sel.innerHTML = '<option value="">Loading…</option>';
@@ -154,6 +246,9 @@ class App {
 
   // ── Events ────────────────────────────────────────────────
 
+  /**
+   * Attach all DOM event handlers. Called once from the constructor.
+   */
   _bindEvents() {
     // Manual key entry
     document.getElementById('validateKeyBtn').addEventListener('click', async () => {
@@ -269,6 +364,12 @@ class App {
 
   // ── Resolve ───────────────────────────────────────────────
 
+  /**
+   * Run a lookup with the current MAC/IP inputs via /api/resolve, render the
+   * results, back-fill whichever of MAC/IP was not entered, and look up the
+   * manufacturer. "All Networks" sends every network ID in one request.
+   * @returns {Promise<void>}
+   */
   async _resolve() {
     const mac = document.getElementById('macInput').value.trim();
     const ip  = document.getElementById('ipInput').value.trim();
@@ -323,6 +424,11 @@ class App {
     }
   }
 
+  /**
+   * Show the manufacturer badge for mac (best effort; errors are ignored).
+   * @param {string} mac MAC address with separators.
+   * @returns {Promise<void>}
+   */
   async _lookupManufacturer(mac) {
     try {
       const res = await fetch('/api/manufacturer?mac=' + encodeURIComponent(mac));
@@ -336,6 +442,12 @@ class App {
 
   // ── Sort ──────────────────────────────────────────────────
 
+  /**
+   * Sort key for a result row and column.
+   * @param {Result} r Result row.
+   * @param {string} col Column key from the header's data-col attribute.
+   * @returns {string} Value to compare; mode sorts uplinks as "uplink".
+   */
   _colValue(r, col) {
     switch (col) {
       case 'device':       return (r.deviceName || r.switchName || '').toLowerCase();
@@ -351,6 +463,12 @@ class App {
     }
   }
 
+  /**
+   * Compare two dotted IPv4 strings numerically, octet by octet.
+   * @param {string} a
+   * @param {string} b
+   * @returns {number} Negative, zero or positive.
+   */
   _cmpIP(a, b) {
     const parse = ip => {
       const parts = (ip || '').split('.');
@@ -364,12 +482,22 @@ class App {
     return 0;
   }
 
+  /**
+   * Compare two port labels by their first integer.
+   * @param {string} a
+   * @param {string} b
+   * @returns {number} Negative, zero or positive.
+   */
   _cmpPort(a, b) {
     // Extract first integer sequence (e.g. "Gi1/0/3" → 1, "24" → 24)
     const num = s => { const m = (s || '').match(/\d+/); return m ? parseInt(m[0], 10) : 0; };
     return num(a) - num(b);
   }
 
+  /**
+   * Results in the current sort order (a copy), or this.results unsorted.
+   * @returns {Result[]}
+   */
   _sortedResults() {
     if (!this._sortCol) return this.results;
     const col = this._sortCol;
@@ -385,6 +513,9 @@ class App {
     });
   }
 
+  /**
+   * Mark the sorted column header with sort-asc or sort-desc.
+   */
   _updateSortHeaders() {
     document.querySelectorAll('#resultsTable th.sortable').forEach(th => {
       th.classList.remove('sort-asc', 'sort-desc');
@@ -396,6 +527,10 @@ class App {
 
   // ── Render results ────────────────────────────────────────
 
+  /**
+   * Re-render the results table, keep or default the selected row, and show
+   * the uplink or trunk advisory note when relevant.
+   */
   _renderResults() {
     const tbody = document.getElementById('resultsTbody');
     const count = document.getElementById('resultsCount');
@@ -505,6 +640,9 @@ class App {
 
   // ── Export ────────────────────────────────────────────────
 
+  /**
+   * Download the current results as meraki-results.csv (every field quoted).
+   */
   _exportCSV() {
     const header = ['Device','Network','MAC','IP','Port','AggrPorts','VLAN','Hostname','Manufacturer','Mode','Uplink'];
     const rows = this.results.map(r => [
@@ -521,10 +659,19 @@ class App {
     this._download('meraki-results.csv', [header.join(','), ...rows].join('\r\n'), 'text/csv');
   }
 
+  /**
+   * Download the current results as meraki-results.json.
+   */
   _exportJSON() {
     this._download('meraki-results.json', JSON.stringify(this.results, null, 2), 'application/json');
   }
 
+  /**
+   * Trigger a browser download of in-memory content.
+   * @param {string} filename Suggested file name.
+   * @param {string} content File contents.
+   * @param {string} mime MIME type.
+   */
   _download(filename, content, mime) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([content], { type: mime }));
@@ -535,6 +682,9 @@ class App {
 
   // ── Log WebSocket ─────────────────────────────────────────
 
+  /**
+   * Open the /ws/logs WebSocket, reconnecting 3 s after any close.
+   */
   _connectLogSocket() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     this.wsLogs = new WebSocket(proto + '://' + location.host + '/ws/logs');
@@ -543,6 +693,12 @@ class App {
     this.wsLogs.onclose = () => setTimeout(() => this._connectLogSocket(), 3000);
   }
 
+  /**
+   * Append one log line to the console if its level passes the filter, keeping
+   * at most 500 lines. The level is read from a "[LEVEL]" tag; untagged lines
+   * count as INFO.
+   * @param {string} message Raw log line.
+   */
   _appendLog(message) {
     const level = (message.match(/\[(DEBUG|INFO|WARNING|ERROR)\]/i) || [])[1] || 'INFO';
     const levels = { DEBUG: 0, INFO: 1, WARNING: 2, ERROR: 3 };
@@ -560,6 +716,10 @@ class App {
 
   // ── UI helpers ────────────────────────────────────────────
 
+  /**
+   * Show the lookup card, apply CLI presets once, and trigger the one-time
+   * automatic resolve when pending.
+   */
   _showResolve() {
     document.getElementById('resolveSection').classList.remove('hidden');
     document.getElementById('mfrRow').classList.add('hidden');
@@ -575,16 +735,29 @@ class App {
       setTimeout(() => this._resolve(), 0);
     }
   }
+  /**
+   * Hide the lookup card.
+   */
   _hideResolve() {
     document.getElementById('resolveSection').classList.add('hidden');
   }
 
+  /**
+   * Show "org › network" in the top bar.
+   * @param {string} orgName Organization name; empty clears the badge.
+   * @param {string} netName Network label; may be empty.
+   */
   _updateBadge(orgName, netName) {
     const badge = document.getElementById('contextBadge');
     if (!orgName) { badge.textContent = ''; return; }
     badge.textContent = netName ? orgName + ' › ' + netName : orgName;
   }
 
+  /**
+   * Show the connection status dot and label.
+   * @param {string} text Label text.
+   * @param {string} type "idle", "ok" or "err" (selects the dot-* CSS class).
+   */
   _setStatus(text, type) {
     const row = document.getElementById('statusRow');
     const dot = document.getElementById('statusDot');
@@ -594,6 +767,12 @@ class App {
     row.classList.remove('hidden');
   }
 
+  /**
+   * Disable a button and show a spinner, or restore it.
+   * @param {string} id Button element ID.
+   * @param {boolean} busy True to show the busy state.
+   * @param {string} label Text shown while busy, or fallback when restoring.
+   */
   _setBusy(id, busy, label) {
     const el = document.getElementById(id);
     el.disabled = busy;
@@ -605,10 +784,20 @@ class App {
     }
   }
 
+  /**
+   * Escape a value for safe insertion into HTML text or a quoted attribute.
+   * @param {*} str Value to escape (converted with String()).
+   * @returns {string}
+   */
   _esc(str) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  /**
+   * Show a transient notification for 4 seconds.
+   * @param {string} msg Message text (inserted as text, not HTML).
+   * @param {string} [type='info'] "info", "success", "warn" or "error".
+   */
   toast(msg, type = 'info') {
     const el = document.createElement('div');
     el.className = 'toast toast-' + type;
@@ -619,6 +808,9 @@ class App {
 
   // ── Prefs ─────────────────────────────────────────────────
 
+  /**
+   * Persist the selected org, network and log filter to localStorage.
+   */
   _savePrefs() {
     localStorage.setItem('meraki_prefs', JSON.stringify({
       org: this.selectedOrg,
@@ -627,6 +819,9 @@ class App {
     }));
   }
 
+  /**
+   * Load saved org, network and log filter from localStorage, ignoring bad data.
+   */
   _restorePrefs() {
     try {
       const p = JSON.parse(localStorage.getItem('meraki_prefs') || '{}');
@@ -639,4 +834,6 @@ class App {
   }
 }
 
+// Create the single App instance once the DOM is ready; exposed as
+// window._app for debugging from the browser console.
 document.addEventListener('DOMContentLoaded', () => { window._app = new App(); });

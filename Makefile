@@ -1,3 +1,12 @@
+# Makefile for Find-Meraki-Ports-With-MAC.
+#
+# `make test` and `make lint` run the same checks as CI; `make build-all`
+# (the default) runs both and then cross-compiles six static binaries into
+# bin/. VERSION below is injected as main.Version and must be kept in step
+# with build.sh, build.ps1 and release.sh by hand. Note `make test` runs
+# `go test -v ./...` without -race, despite the "race detection" wording;
+# CI and release.sh add -race.
+
 .PHONY: all clean build-windows build-darwin build-linux build-all help test lint
 
 APP_NAME := Find-Meraki-Ports-With-MAC

@@ -17,6 +17,17 @@
 #   2. Build static binaries for all 6 platforms into ./bin/
 #   3. Create (or update) the git tag v$VERSION on the current commit
 #   4. Create (or update) the GitHub release with all 6 binaries attached
+#
+# WARNING: without --dry-run this force-moves the tag (git tag -f, then
+# git push origin -f) and deletes any existing GitHub release with the same
+# tag before recreating it. Release notes default to the CHANGELOG.md section
+# headed "## [$VERSION]".
+#
+# Arguments: --dry-run, --notes <text> / --notes=<text>; anything else exits 1.
+# Outputs:   ./bin/Find-Meraki-Ports-With-MAC-<os>-<arch>[.exe]; a pushed tag
+#            and a GitHub release unless --dry-run.
+# Requires:  go, git, gh (checked even for --dry-run); golangci-lint optional.
+# Exit:      non-zero on the first failing step (set -e).
 
 set -e
 

@@ -19,6 +19,7 @@ import (
 	"testing"
 )
 
+// TestNormalizeExactMac checks the accepted MAC formats and the length and character errors.
 func TestNormalizeExactMac(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -84,6 +85,7 @@ func TestNormalizeExactMac(t *testing.T) {
 	}
 }
 
+// TestFormatMacColon checks colon formatting of normalized MACs, including lowercasing.
 func TestFormatMacColon(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -112,6 +114,7 @@ func TestFormatMacColon(t *testing.T) {
 	}
 }
 
+// TestBuildMacRegex checks that "*" matches one byte and bracket tokens match one nibble.
 func TestBuildMacRegex(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -153,6 +156,7 @@ func TestBuildMacRegex(t *testing.T) {
 	}
 }
 
+// TestBuildMacMatcher checks exact and wildcard matchers and the isPattern flag.
 func TestBuildMacMatcher(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -205,6 +209,7 @@ func TestBuildMacMatcher(t *testing.T) {
 	}
 }
 
+// BenchmarkNormalizeExactMac measures normalizing a colon-separated MAC.
 func BenchmarkNormalizeExactMac(b *testing.B) {
 	mac := "00:11:22:33:44:55"
 	for i := 0; i < b.N; i++ {
@@ -212,6 +217,7 @@ func BenchmarkNormalizeExactMac(b *testing.B) {
 	}
 }
 
+// BenchmarkBuildMacRegex measures compiling a bracket pattern.
 func BenchmarkBuildMacRegex(b *testing.B) {
 	pattern := "0011223344[1-4][0-F]"
 	for i := 0; i < b.N; i++ {

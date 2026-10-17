@@ -14,6 +14,11 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // Package output provides multiple output format writers for tabular data.
+//
+// All writers emit the same eleven columns, in the same order: Org, Network,
+// Switch, Serial, Port, AggrPorts, MAC, IP, Hostname, LastSeen, Uplink.
+// ResultRow.VLAN and ResultRow.PortMode are carried for the web UI and are not
+// written by these CLI writers.
 package output
 
 import (
@@ -26,19 +31,35 @@ import (
 
 // ResultRow represents a single row of MAC lookup results.
 type ResultRow struct {
-	OrgName      string
-	NetworkName  string
-	SwitchName   string
+	// OrgName is the organization the switch belongs to.
+	OrgName string
+	// NetworkName is the network the switch belongs to.
+	NetworkName string
+	// SwitchName is the switch name, or its serial when it has no name.
+	SwitchName string
+	// SwitchSerial is the switch serial number.
 	SwitchSerial string
-	Port         string
-	AggrPorts    []string // member ports when Port is a link-aggregation (AGGR/*) port
-	MAC          string
-	LastSeen     string
-	IP           string
-	Hostname     string
-	VLAN         int
-	PortMode     string // "access", "trunk", or ""
-	IsUplink     bool   // true when port appears in link-layer topology as an inter-device link
+	// Port is the port ID the MAC was seen on, e.g. "24" or "AGGR/0"; "unknown" if not reported.
+	Port string
+	// AggrPorts lists the member ports when Port is a link-aggregation port.
+	AggrPorts []string // member ports when Port is a link-aggregation (AGGR/*) port
+	// MAC is the MAC address in lowercase colon form.
+	MAC string
+	// LastSeen is the last-seen timestamp from the Meraki API, if known.
+	LastSeen string
+	// IP is the client IP address, if known.
+	IP string
+	// Hostname is the best available hostname for the client, if known.
+	Hostname string
+	// VLAN is the port's access/native VLAN, or 0 if unknown.
+	VLAN int
+	// PortMode is the port mode.
+	PortMode string // "access", "trunk", or ""
+	// IsUplink reports whether the port is an uplink. The trailing comment
+	// predates v1.3.0: the value now comes from the switch port statuses API
+	// isUplink field (see meraki.MerakiClient.GetDeviceUplinkPorts), not from
+	// the link-layer topology.
+	IsUplink bool // true when port appears in link-layer topology as an inter-device link
 }
 
 // aggrPortsStr returns the AggrPorts as a comma-separated string, or empty string if none.
@@ -49,7 +70,8 @@ func aggrPortsStr(row ResultRow) string {
 	return strings.Join(row.AggrPorts, ", ")
 }
 
-// WriteCSV writes results in CSV format with headers.
+// WriteCSV writes results in CSV format with a header row. Write errors are
+// ignored, matching the other writers: output goes to stdout.
 func WriteCSV(w io.Writer, rows []ResultRow) {
 	writer := csv.NewWriter(w)
 	defer writer.Flush()
@@ -67,7 +89,9 @@ func WriteCSV(w io.Writer, rows []ResultRow) {
 	}
 }
 
-// WriteText writes results in plain text table format with aligned columns.
+// WriteText writes results in plain text table format with aligned columns,
+// or the single line "No results" when rows is empty. Column widths are
+// measured in bytes, so non-ASCII names can misalign.
 func WriteText(w io.Writer, rows []ResultRow) {
 	if len(rows) == 0 {
 		_, _ = fmt.Fprintln(w, "No results")
@@ -108,7 +132,8 @@ func WriteText(w io.Writer, rows []ResultRow) {
 	_, _ = fmt.Fprintln(w, separator)
 }
 
-// WriteHTML writes results in HTML table format.
+// WriteHTML writes results as a bare HTML table fragment (no html/body
+// wrapper). Every cell is HTML-escaped.
 func WriteHTML(w io.Writer, rows []ResultRow) {
 	_, _ = fmt.Fprintln(w, "<table>")
 	_, _ = fmt.Fprintln(w, "  <thead>")
@@ -158,7 +183,8 @@ func sum(values []int) int {
 	return total
 }
 
-// max returns the maximum of two integers.
+// max returns the maximum of two integers. It predates, and shadows within
+// this package, the Go 1.21 built-in max.
 func max(a, b int) int {
 	if a > b {
 		return a

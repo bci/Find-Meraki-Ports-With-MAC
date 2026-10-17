@@ -29,6 +29,12 @@ var ouiCache sync.Map
 // lookupOUI queries api.macvendors.com for the vendor of a MAC address.
 // The first three octets (OUI) are used as the cache key.
 // Returns empty string if the lookup fails or the vendor is unknown.
+//
+// This sends the OUI (never the full MAC) to a third-party service over
+// HTTPS with a 4-second timeout and reads at most 256 bytes. Failures are
+// cached as "" for the life of the process, so a rate-limited first lookup
+// is not retried until restart. The MAC must use ":", "-" or "." between
+// octets; a bare 12-hex-digit MAC yields "".
 func lookupOUI(mac string) string {
 	if mac == "" {
 		return ""
@@ -66,6 +72,8 @@ func lookupOUI(mac string) string {
 	return vendor
 }
 
+// getManufacturer returns the vendor name for mac. It is a thin alias for
+// lookupOUI, used when building web results.
 func getManufacturer(mac string) string {
 	return lookupOUI(mac)
 }

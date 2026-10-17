@@ -21,6 +21,7 @@ import (
 	"testing"
 )
 
+// TestWriteCSV checks the CSV header and the column order of a data row.
 func TestWriteCSV(t *testing.T) {
 	rows := []ResultRow{
 		{
@@ -48,6 +49,7 @@ func TestWriteCSV(t *testing.T) {
 	}
 }
 
+// TestWriteText checks that the text table contains the row's key values.
 func TestWriteText(t *testing.T) {
 	rows := []ResultRow{
 		{
@@ -81,6 +83,7 @@ func TestWriteText(t *testing.T) {
 	}
 }
 
+// TestWriteHTML checks the HTML table structure and cell contents.
 func TestWriteHTML(t *testing.T) {
 	rows := []ResultRow{
 		{
