@@ -152,7 +152,7 @@ installed with `go install`) serves a page with no styling or behaviour.
 **Treat it as a local, single-user tool.** The server has no authentication: `/api/config`
 returns the API key from your `.env`, and the topology page embeds it. Keep the default
 `--web-host localhost` unless you understand that anyone who can reach the port can use
-your key.
+your key. (The live-log WebSocket only accepts connections from the UI's own origin.)
 
 ### Web Interface Features
 

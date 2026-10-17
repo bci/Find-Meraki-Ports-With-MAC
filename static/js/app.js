@@ -205,7 +205,7 @@ class App {
     sel.innerHTML = '<option value="">Loading…</option>';
     document.getElementById('networkRow').classList.remove('hidden');
     try {
-      const res = await fetch('/api/networks?orgId=' + orgId + '&apiKey=' + encodeURIComponent(this.apiKey));
+      const res = await fetch('/api/networks?orgId=' + encodeURIComponent(orgId) + '&apiKey=' + encodeURIComponent(this.apiKey));
       const data = await res.json();
       if (data.error) { this.toast(data.error, 'error'); return; }
       this.networks = data.networks || [];

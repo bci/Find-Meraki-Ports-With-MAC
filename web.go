@@ -346,11 +346,11 @@ func handleHome(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(tmpl))
 }
 
-// upgrader upgrades /ws/logs requests to WebSocket connections. CheckOrigin
-// accepts every origin.
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
+// upgrader upgrades /ws/logs requests to WebSocket connections. CheckOrigin is
+// left nil so gorilla/websocket's default same-origin check applies: the UI
+// connects from its own page, while any other web page the user has open
+// could otherwise read the log stream from localhost.
+var upgrader = websocket.Upgrader{}
 
 // handleWebSocketLogs upgrades the request to a WebSocket and streams every
 // hub log line to it as a text message until the connection fails. Incoming

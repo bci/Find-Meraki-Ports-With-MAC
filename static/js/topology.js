@@ -33,6 +33,17 @@
     return el ? el.getAttribute('content') || '' : '';
   }
 
+  /**
+   * Escape a value for insertion into HTML. The tooltip is built with
+   * innerHTML from device names, hostnames (which can come from a client's
+   * own DHCP request) and URL parameters, so every value must be escaped.
+   * @param {*} str Value to escape (converted with String()).
+   * @returns {string}
+   */
+  function esc(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   const NETWORK_ID        = meta('topo-network-id');
   const ORG_ID            = meta('topo-org-id');
   const API_KEY           = meta('topo-api-key');
@@ -151,17 +162,17 @@
         tooltip.style.top  = (e.clientY - 10) + 'px';
         if (d.isPc) {
           tooltip.innerHTML = '<div class="tt-title">🖥 Found Device</div>' +
-            '<div class="tt-row hi">MAC: <span>' + (d.mac || '—') + '</span></div>' +
-            (d.hostname ? '<div class="tt-row hi">Host: <span>' + d.hostname + '</span></div>' : '') +
-            (HIGHLIGHT_PORT ? '<div class="tt-row hi">Port: <span>' + HIGHLIGHT_PORT + '</span></div>' : '') +
+            '<div class="tt-row hi">MAC: <span>' + esc(d.mac || '—') + '</span></div>' +
+            (d.hostname ? '<div class="tt-row hi">Host: <span>' + esc(d.hostname) + '</span></div>' : '') +
+            (HIGHLIGHT_PORT ? '<div class="tt-row hi">Port: <span>' + esc(HIGHLIGHT_PORT) + '</span></div>' : '') +
             '<div class="tt-row">Mode: <span>Access</span></div>';
         } else {
-          tooltip.innerHTML = '<div class="tt-title">' + (d.name || d.id) + '</div>' +
-            '<div class="tt-row">Type: <span>' + (d.type || '—') + '</span></div>' +
-            '<div class="tt-row">Serial: <span>' + (d.id || '—') + '</span></div>' +
-            '<div class="tt-row">Model: <span>' + (d.model || '—') + '</span></div>' +
+          tooltip.innerHTML = '<div class="tt-title">' + esc(d.name || d.id) + '</div>' +
+            '<div class="tt-row">Type: <span>' + esc(d.type || '—') + '</span></div>' +
+            '<div class="tt-row">Serial: <span>' + esc(d.id || '—') + '</span></div>' +
+            '<div class="tt-row">Model: <span>' + esc(d.model || '—') + '</span></div>' +
             (d.id === HIGHLIGHT_SERIAL && HIGHLIGHT_PORT
-              ? '<div class="tt-row hi">Port ' + HIGHLIGHT_PORT + ': <span>Device connected</span></div>'
+              ? '<div class="tt-row hi">Port ' + esc(HIGHLIGHT_PORT) + ': <span>Device connected</span></div>'
               : '');
         }
       })

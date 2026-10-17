@@ -43,7 +43,7 @@
     Requires go on PATH; git is optional (commit becomes "unknown").
     $env:GOOS, $env:GOARCH and $env:CGO_ENABLED are modified and left set to
     the last build's values when the script ends.
-    BuildTime is formatted from local time but carries a "Z" (UTC) suffix.
+    BuildTime is UTC, matching build.sh and the Makefile.
 #>
 
 param(
@@ -105,7 +105,7 @@ Write-Host ""
 # Get git metadata
 $commit = git rev-parse --short HEAD 2>$null
 if (!$commit) { $commit = "unknown" }
-$buildTime = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
+$buildTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $ldflags = "-s -w -X main.Version=$Version -X main.Commit=$commit -X main.BuildTime=$buildTime"
 
 # Always build local Windows executable

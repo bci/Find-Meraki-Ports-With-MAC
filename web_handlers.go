@@ -24,6 +24,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"sort"
 	"strings"
@@ -234,7 +235,9 @@ func handleTopology(w http.ResponseWriter, r *http.Request) {
 
 	// html/template would auto-escape, but we're building a small fixed page
 	// with no user-controlled content in element bodies — only in meta content
-	// attributes, which strings.NewReplacer handles safely here.
+	// attributes. strings.NewReplacer does not escape, so every value is passed
+	// through html.EscapeString below; the browser unescapes it again when
+	// topology.js reads the attribute.
 	tmpl := `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -278,15 +281,15 @@ func handleTopology(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html")
 	page := strings.NewReplacer(
-		"__NETWORK_ID__", networkID,
-		"__ORG_ID__", orgID,
-		"__API_KEY__", apiKey,
-		"__HIGHLIGHT_SERIAL__", highlightSerial,
-		"__HIGHLIGHT_PORT__", highlightPort,
-		"__HIGHLIGHT_NAME__", highlightName,
-		"__PORT_MODE__", portMode,
-		"__HIGHLIGHT_MAC__", mac,
-		"__HIGHLIGHT_HOSTNAME__", hostname,
+		"__NETWORK_ID__", html.EscapeString(networkID),
+		"__ORG_ID__", html.EscapeString(orgID),
+		"__API_KEY__", html.EscapeString(apiKey),
+		"__HIGHLIGHT_SERIAL__", html.EscapeString(highlightSerial),
+		"__HIGHLIGHT_PORT__", html.EscapeString(highlightPort),
+		"__HIGHLIGHT_NAME__", html.EscapeString(highlightName),
+		"__PORT_MODE__", html.EscapeString(portMode),
+		"__HIGHLIGHT_MAC__", html.EscapeString(mac),
+		"__HIGHLIGHT_HOSTNAME__", html.EscapeString(hostname),
 	).Replace(tmpl)
 	_, _ = w.Write([]byte(page))
 }

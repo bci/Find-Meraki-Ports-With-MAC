@@ -68,18 +68,25 @@ func FormatMacColon(clean string) string {
 // NormalizePatternInput normalizes a MAC pattern by removing separators
 // but preserving wildcards (*) and bracket patterns ([...]).
 // Note: * remains as *, representing one byte (2 hex chars)
-// The result is uppercased. Because "-" is treated as a separator, a range
-// such as "[1-4]" becomes "[14]" here, which matches only 1 or 4; see
-// BuildMacMatcher.
+// The result is uppercased. Inside brackets "-" is a range ("[1-4]"), not a
+// separator, so it is kept there; everywhere else it is removed.
 func NormalizePatternInput(input string) string {
 	var b strings.Builder
+	inBracket := false
 	for _, r := range input {
 		switch r {
-		case ':', '.', '-':
+		case '[':
+			inBracket = true
+		case ']':
+			inBracket = false
+		case ':', '.':
 			continue
-		default:
-			b.WriteRune(r)
+		case '-':
+			if !inBracket {
+				continue
+			}
 		}
+		b.WriteRune(r)
 	}
 	return strings.ToUpper(b.String())
 }

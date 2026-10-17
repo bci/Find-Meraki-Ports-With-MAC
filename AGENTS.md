@@ -38,6 +38,7 @@ Go module name: `Find-Meraki-Ports-With-MAC`. `go.mod` declares `go 1.21`; depen
 | `test-live-clients.ps1` | Developer probe for an Early Access Meraki endpoint; calls the real API. Do not run. |
 | `.github/workflows/test.yml` | CI: tests on Go 1.21–1.23 × Linux/macOS/Windows, golangci-lint, copyright gate, builds |
 | `docs/prompts/` | The specification prompts the code was built from |
+| `docs/code-review/` | Dated code-review reports: what was fixed, what is open, questions |
 | `CHANGELOG.md` | User-facing release notes (Keep a Changelog) |
 | `WORKLOG.md`, `VERSIONS.md`, `features.yaml` | Bookkeeping per `CLAUDE.md` |
 | `COMPLETION_REPORT.md`, `VERSIONING.md`, `VERSION_IMPLEMENTATION.md`, `SAMPLE_RUN.md`, `.github/DOCUMENTATION_SUMMARY.md` | Historical reports from earlier sessions; not kept current |
@@ -94,3 +95,4 @@ To exercise the CLI end to end without Meraki, point `MERAKI_BASE_URL` at a loca
 - `pkg/meraki` still carries unused types/functions from the earlier LLDP/topology uplink
   approach (`BuildUplinkPortSet`, `LLDPCDPData`, `SwitchPortFull`).
 - No end-to-end test of the lookup loops; they are only exercised by hand.
+- Open findings and questions: `docs/code-review/2026-10-16.md`.

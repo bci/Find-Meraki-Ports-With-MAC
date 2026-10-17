@@ -632,7 +632,9 @@ func main() {
 							}
 
 							ip, hn := ipAndHostname(normMAC, "", dev.Serial)
-							_, isUplink := cliGetUplinkPorts(dev.Serial)[port]
+							// isPortUplink also checks AGGR member ports, as the other two
+							// branches and the web path already do.
+							isUplink := isPortUplink(port, aggrMembers, cliGetUplinkPorts(dev.Serial))
 							addResult(resultsIndex, &results, output.ResultRow{
 								OrgName:      org.Name,
 								NetworkName:  net.Name,
@@ -762,7 +764,7 @@ func parseIntEnv(key string) int {
 // It never returns.
 func exitWithError(log *logger.Logger, msg string) {
 	if log != nil {
-		log.Errorf(msg)
+		log.Errorf("%s", msg)
 	} else {
 		fmt.Fprintf(os.Stderr, "ERROR: %s\n", msg)
 	}

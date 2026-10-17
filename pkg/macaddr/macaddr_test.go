@@ -186,6 +186,31 @@ func TestBuildMacMatcher(t *testing.T) {
 			wantPattern: true,
 			wantErr:     false,
 		},
+		{
+			// The README example. The "-" inside a bracket is a range, not a
+			// separator, so it must survive normalization.
+			name:  "bracket range pattern",
+			input: "08:f1:b3:6f:9c:[1-4][0-f]",
+			testMACs: map[string]bool{
+				"08f1b36f9c10": true,
+				"08f1b36f9c2a": true,
+				"08f1b36f9c4f": true,
+				"08f1b36f9c50": false,
+				"08f1b36f9c0a": false,
+			},
+			wantPattern: true,
+			wantErr:     false,
+		},
+		{
+			name:  "bracket range with dash separators",
+			input: "08-f1-b3-6f-9c-[1-4][0-f]",
+			testMACs: map[string]bool{
+				"08f1b36f9c3c": true,
+				"08f1b36f9c5c": false,
+			},
+			wantPattern: true,
+			wantErr:     false,
+		},
 	}
 
 	for _, tt := range tests {
