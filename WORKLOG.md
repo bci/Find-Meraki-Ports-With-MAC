@@ -3,6 +3,14 @@
 Newest first. Absolute dates only. Earlier history (2026-02-13 to 2026-03-03) is in
 `CHANGELOG.md` and the git log; this file starts on 2026-10-16.
 
+## 2026-10-24
+
+### ISSUES.md added (bookkeeping profile)
+
+- Kent made `ISSUES.md` the fourth bookkeeping file (claude-config FEAT-0024). It was
+  seeded from what this repo already records as open: 7 entries, each citing its source.
+  Nothing was invented.
+- The bookkeeping block in `CLAUDE.md` was re-synced from claude-config.
 ## 2026-10-16
 
 ### Documentation pass (branch `overnight-docs`)
