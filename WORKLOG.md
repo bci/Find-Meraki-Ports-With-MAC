@@ -13,6 +13,30 @@ Newest first. Absolute dates only. Earlier history (2026-02-13 to 2026-03-03) is
 - The bookkeeping block in `CLAUDE.md` was re-synced from claude-config.
 ## 2026-10-16
 
+### Code review (branch `code-review`)
+
+Second half of the overnight run: a senior-engineer review of all first-party code, fixing what
+was clearly wrong and safe, and writing up the rest. Full report, with every finding, its
+evidence and the questions: `docs/code-review/2026-10-16.md`.
+
+**Fixed (8):** MAC bracket ranges (`[1-4]`) never matched — the README's own example found
+nothing; the CLI's live-MAC-table branch didn't flag AGGR uplinks; reflected XSS in `/topology`
+(the comment said `strings.NewReplacer` "handles safely" — it doesn't escape); stored XSS in the
+topology tooltip via DHCP hostnames; `/ws/logs` accepted every origin, so any open website could
+read the log stream; `exitWithError` used the message as a format string; `copyright_test.go`'s
+three gates had checked zero files since they were written; `build.ps1` stamped local time as UTC.
+
+**Why these and not more.** The bar was "clearly wrong, safe, surgical". Each fix has a test that
+failed first, except the CLI uplink flag (inside `main()`, so it was checked against a fake API
+instead) and the two script/JS fixes (checked in pwsh and node). Things that would change what a
+user sees in a way they might rely on — which hostname IP mode shows, error reporting for "All
+Networks", `--port` matching, the `--verbose` stdout line — were left as questions, as were
+structural changes (merging the duplicated CLI/web lookup, embedding `static/`, web-server
+authentication). The duplication is the root cause of one of the bugs, so it is the first thing
+worth doing next, behind a fake-API end-to-end test.
+
+`features.yaml`: FEAT-0002 and FEAT-0020 moved to `complete`, FEAT-0011 to `in-test`, with notes.
+
 ### Documentation pass (branch `overnight-docs`)
 
 Unattended overnight pass, asked for by Kent: bring the code up to `CLAUDE.md` §11 (complete

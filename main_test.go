@@ -17,11 +17,14 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"Find-Meraki-Ports-With-MAC/pkg/logger"
 	"Find-Meraki-Ports-With-MAC/pkg/meraki"
 	"Find-Meraki-Ports-With-MAC/pkg/output"
 )
@@ -498,5 +501,31 @@ func TestLookupOUI_ShortMAC(t *testing.T) {
 	got := lookupOUI("AA:BB")
 	if got != "" {
 		t.Errorf("lookupOUI(\"AA:BB\") = %q, want \"\" (too short)", got)
+	}
+}
+
+// ── exitWithError ─────────────────────────────────────────────────────────────
+
+// TestExitWithError_PercentInMessage checks that a message containing "%"
+// (common in API error bodies and URLs) is logged verbatim and the process
+// exits with status 1. exitWithError calls os.Exit, so the test re-runs the
+// test binary as a child process that makes the call.
+func TestExitWithError_PercentInMessage(t *testing.T) {
+	const msg = "meraki API error 400: 100%d off %s"
+	if os.Getenv("FINDMAC_EXIT_HELPER") == "1" {
+		exitWithError(logger.New("", logger.LevelDebug), msg)
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestExitWithError_PercentInMessage$")
+	cmd.Env = append(os.Environ(), "FINDMAC_EXIT_HELPER=1")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("child exit = %v, want exit status 1", err)
+	}
+	if !strings.Contains(stderr.String(), "[ERROR] "+msg) {
+		t.Errorf("stderr = %q, want it to contain %q verbatim", stderr.String(), msg)
 	}
 }

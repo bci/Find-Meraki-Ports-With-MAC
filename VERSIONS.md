@@ -5,7 +5,7 @@ user-facing detail stays in `CHANGELOG.md`, this file records which commit each 
 
 | Version | Date | Tag / commit | Notes |
 | --- | --- | --- | --- |
-| Unreleased | 2026-10-16 | branch `overnight-docs` | Documentation pass only (no behaviour change). See WORKLOG.md. |
+| Unreleased | 2026-10-16 | branches `overnight-docs`, `code-review` | Documentation pass (no behaviour change), then review fixes: MAC bracket ranges, CLI AGGR uplink flag, topology XSS, WebSocket origin check, `%` in fatal errors, copyright CI gate. See WORKLOG.md and docs/code-review/2026-10-16.md. |
 | 1.3.2 | 2026-03-03 | no tag; `739924a` | `--env` flag, `~/.env.find-mac` default and auto-created stub. The build scripts still say `1.3.1`. |
 | 1.3.1 | 2026-03-02 | tag `v1.3.1` → `a874d81` (2026-03-03) | Split `main.go` into focused files; `resolve_test.go`. |
 | 1.3.0 | 2026-03-02 | no tag | `--test-data` demo mode; uplink detection via switch port statuses. |

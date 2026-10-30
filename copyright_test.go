@@ -35,6 +35,7 @@ func TestCopyrightHeaders(t *testing.T) {
 
 	root := "." // run from module root via `go test ./...`
 
+	checked := 0
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -43,7 +44,7 @@ func TestCopyrightHeaders(t *testing.T) {
 		// Skip vendor, hidden dirs, and test-build artefacts
 		if d.IsDir() {
 			name := d.Name()
-			if name == "vendor" || (len(name) > 0 && name[0] == '.') || name == "bin" || name == "coverage" {
+			if path != root && (name == "vendor" || (len(name) > 0 && name[0] == '.') || name == "bin" || name == "coverage") {
 				return filepath.SkipDir
 			}
 			return nil
@@ -74,6 +75,7 @@ func TestCopyrightHeaders(t *testing.T) {
 			return nil
 		}
 
+		checked++
 		if firstLine != copyrightHeader {
 			t.Errorf("missing GPL copyright header in %s\n  want: %q\n   got: %q",
 				path, copyrightHeader, firstLine)
@@ -83,6 +85,11 @@ func TestCopyrightHeaders(t *testing.T) {
 
 	if err != nil {
 		t.Fatalf("WalkDir error: %v", err)
+	}
+	// Guard against the walk silently skipping everything (it once skipped
+	// "." itself as a hidden directory, so this gate checked nothing).
+	if checked == 0 {
+		t.Fatal("no .go files were checked; the directory walk skipped the module root")
 	}
 }
 
@@ -103,22 +110,26 @@ func TestTemplatesNoInlineJS(t *testing.T) {
 	checkNoInlineAsset(t, "<script>", "inline JS script block without src (move JS to static/js/)")
 }
 
-// checkNoInlineAsset walks .go files and fails the test if any line contains needle.
+// checkNoInlineAsset walks non-test .go files and fails the test if any line
+// contains needle (case-insensitively).
 func checkNoInlineAsset(t *testing.T, needle, description string) {
 	t.Helper()
 	root := "."
+	checked := 0
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
 			name := d.Name()
-			if name == "vendor" || (len(name) > 0 && name[0] == '.') || name == "bin" || name == "coverage" {
+			if path != root && (name == "vendor" || (len(name) > 0 && name[0] == '.') || name == "bin" || name == "coverage") {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if filepath.Ext(path) != ".go" {
+		// Test files are exempt: they legitimately contain the needles (this
+		// file names them, and handler tests send them as hostile input).
+		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
 
@@ -129,6 +140,7 @@ func checkNoInlineAsset(t *testing.T, needle, description string) {
 		}
 		defer func() { _ = f.Close() }()
 
+		checked++
 		scanner := bufio.NewScanner(f)
 		lineNum := 0
 		for scanner.Scan() {
@@ -142,5 +154,8 @@ func checkNoInlineAsset(t *testing.T, needle, description string) {
 	})
 	if err != nil {
 		t.Fatalf("WalkDir error: %v", err)
+	}
+	if checked == 0 {
+		t.Fatal("no .go files were checked; the directory walk skipped the module root")
 	}
 }
