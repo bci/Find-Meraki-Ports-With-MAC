@@ -20,7 +20,8 @@ param(
 # ---------------------------------------------------------------------------
 # Load .env
 # ---------------------------------------------------------------------------
-$envFile = Join-Path $PSScriptRoot ".env"
+$envFile = if ($env:HOMEDRIVE) { Join-Path "$env:HOMEDRIVE\" ".env\meraki-ports-with-mac.env" }
+           else { Join-Path $HOME ".env/meraki-ports-with-mac.env" }
 if (Test-Path $envFile) {
     Get-Content $envFile | Where-Object { $_ -match '^\s*[^#]\S+=\S' } | ForEach-Object {
         $key, $val = $_ -split '=', 2
@@ -33,7 +34,7 @@ $apiKey  = $env:MERAKI_API_KEY
 $baseUrl = if ($env:MERAKI_BASE_URL) { $env:MERAKI_BASE_URL } else { "https://api.meraki.com/api/v1" }
 
 if (-not $apiKey) {
-    Write-Error "MERAKI_API_KEY not set (check .env)"
+    Write-Error "MERAKI_API_KEY not set (check $envFile)"
     exit 1
 }
 

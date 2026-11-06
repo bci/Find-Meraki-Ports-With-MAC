@@ -198,23 +198,29 @@ Wildcard patterns:
 
 ## Configuration (.env file)
 
-The app reads configuration from a `.env` file. By default it looks for
-**`~/.env.find-mac`** in your home directory — this file is created automatically
-with commented-out stubs the first time you run the app.
+The app reads configuration from a **per-user** `.env` file that lives outside
+the repo, in the shared per-user `.env` folder on your home drive. Credentials
+are per user and must never be kept in the repo folder, which only contains the
+`.env.example` template. The file is created automatically with commented-out
+stubs the first time you run the app.
 
 | Platform | Default location |
 |----------|------------------|
-| macOS / Linux | `~/.env.find-mac` (`/home/<user>/.env.find-mac`) |
-| Windows | `%USERPROFILE%\.env.find-mac` (e.g. `C:\Users\kent\.env.find-mac`) |
+| Windows | `%HOMEDRIVE%\.env\meraki-ports-with-mac.env` (e.g. `H:\.env\meraki-ports-with-mac.env`) |
+| macOS / Linux (or Windows without `HOMEDRIVE`) | `~/.env/meraki-ports-with-mac.env` |
+
+First-time setup on Windows:
+
+```powershell
+New-Item -ItemType Directory -Force H:\.env | Out-Null
+Copy-Item .env.example H:\.env\meraki-ports-with-mac.env
+# then edit H:\.env\meraki-ports-with-mac.env and set MERAKI_API_KEY
+```
 
 You can override the path with `--env <filepath>`:
 
 ```bash
-# Use a shared config on a network drive
 findmac --env /Volumes/share/meraki.env --mac 00:11:22:33:44:55
-
-# Use a project-local .env
-findmac --env .env --mac 00:11:22:33:44:55
 ```
 
 ### Variables
@@ -260,7 +266,7 @@ findmac --env .env --mac 00:11:22:33:44:55
 - --log-level: DEBUG | INFO | WARNING | ERROR
 
 **Configuration:**
-- --env: path to `.env` config file (default: `~/.env.find-mac`; created automatically if absent)
+- --env: path to `.env` config file (default: `H:\.env\meraki-ports-with-mac.env` — see [Configuration](#configuration-env-file); created automatically if absent)
 
 **Information:**
 - --version: show version, commit, build time, and repository URL

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Per-user config location**: The default `.env` path moved from
+  `~/.env.find-mac` to the shared per-user folder on the home drive:
+  `%HOMEDRIVE%\.env\meraki-ports-with-mac.env` on Windows (e.g.
+  `H:\.env\meraki-ports-with-mac.env`), or `~/.env/meraki-ports-with-mac.env`
+  elsewhere. The folder is created if missing. Credentials never live in the
+  repo; only `.env.example` is tracked. `test-live-clients.ps1` reads the same file.
+
 ## [1.3.0] - 2026-03-02
 
 ### Added

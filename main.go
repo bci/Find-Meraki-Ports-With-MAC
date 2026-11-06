@@ -23,6 +23,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -79,10 +80,31 @@ var (
 	webTestDataMode  bool        // --test-data: serve sanitised demo data, no API calls
 )
 
+// envFileName is this tool's per-user config file name inside the shared
+// per-user .env folder (H:\.env\<tool>.env on the City network).
+const envFileName = "meraki-ports-with-mac.env"
+
+// defaultEnvFile returns the per-user config path: <home drive>\.env\<tool>.env.
+// On Windows the home drive comes from %HOMEDRIVE% (H: on domain machines);
+// elsewhere, or when HOMEDRIVE is unset, the user's home directory is used.
+// Credentials never live in the repo folder.
+func defaultEnvFile() string {
+	if runtime.GOOS == "windows" {
+		if drive := os.Getenv("HOMEDRIVE"); drive != "" {
+			return filepath.Join(drive+`\`, ".env", envFileName)
+		}
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return envFileName
+	}
+	return filepath.Join(home, ".env", envFileName)
+}
+
 // resolveEnvFile resolves the .env file path to use.
-// Priority: --env flag > default (~/.env.find-mac).
-// If the resolved file does not exist it is created as an empty file so the
-// user has a clear location to populate.
+// Priority: --env flag > default (see defaultEnvFile).
+// If the resolved file does not exist it is created as a commented stub so
+// the user has a clear location to populate.
 func resolveEnvFile() string {
 	// Pre-scan os.Args for --env / --env=<path> before flag.Parse runs so that
 	// the file is loaded before env-vars are consumed into Config.
@@ -101,21 +123,16 @@ func resolveEnvFile() string {
 		}
 	}
 
-	// Default: ~/.env.find-mac
-	home, err := os.UserHomeDir()
-	if err != nil {
-		// Fallback to current directory if home cannot be determined
-		return ".env.find-mac"
-	}
-	return filepath.Join(home, ".env.find-mac")
+	return defaultEnvFile()
 }
 
 func main() {
 	envFile := resolveEnvFile()
 
 	// Create the env file if it does not exist so the user has a ready-made
-	// location to add their settings (home directory on all platforms).
+	// location to add their settings.
 	if _, err := os.Stat(envFile); os.IsNotExist(err) {
+		_ = os.MkdirAll(filepath.Dir(envFile), 0700)
 		if f, err := os.OpenFile(envFile, os.O_CREATE|os.O_WRONLY, 0600); err == nil {
 			_, _ = fmt.Fprintf(f, "# Find-Meraki-Ports-With-MAC configuration\n")
 			_, _ = fmt.Fprintf(f, "# Edit this file to set your defaults.\n")
@@ -810,12 +827,10 @@ func printUsage(w *os.File) {
 	_, _ = fmt.Fprintln(w, "  --web-port <port>           Web server port (default: 8080)")
 	_, _ = fmt.Fprintln(w, "  --web-host <host>           Web server host (default: localhost)")
 	_, _ = fmt.Fprintln(w, "  --env <filepath>            Path to .env config file")
-	_, _ = fmt.Fprintln(w, "                                Default: ~/.env.find-mac  (macOS/Linux)")
-	_, _ = fmt.Fprintln(w, "                                         $env:USERPROFILE\\.env.find-mac  (Windows)")
+	_, _ = fmt.Fprintln(w, "                                Default: %HOMEDRIVE%\\.env\\"+envFileName+"  (Windows, e.g. H:\\.env\\...)")
+	_, _ = fmt.Fprintln(w, "                                         ~/.env/"+envFileName+"  (macOS/Linux)")
 	_, _ = fmt.Fprintln(w, "                                The file is created automatically with commented")
-	_, _ = fmt.Fprintln(w, "                                stubs if it does not exist.")
-	_, _ = fmt.Fprintln(w, "                                Use --env to point to a network share, project")
-	_, _ = fmt.Fprintln(w, "                                directory, or any other location.")
+	_, _ = fmt.Fprintln(w, "                                stubs if it does not exist. Never keep it in the repo.")
 	_, _ = fmt.Fprintln(w, "  --version                   Show version and exit")
 	_, _ = fmt.Fprintln(w, "  --help                      Show this help")
 	_, _ = fmt.Fprintln(w, "")

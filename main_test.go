@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -312,15 +313,34 @@ func TestParseIntEnv(t *testing.T) {
 
 func TestResolveEnvFile_Default(t *testing.T) {
 	// With no --env in os.Args (test runner args won't contain it) the default
-	// should be ~/.env.find-mac
+	// should be the per-user path from defaultEnvFile.
+	want := defaultEnvFile()
+	got := resolveEnvFile()
+	if got != want {
+		t.Errorf("resolveEnvFile() = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultEnvFile_HomeDrive(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("HOMEDRIVE only applies on Windows")
+	}
+	t.Setenv("HOMEDRIVE", "H:")
+	want := `H:\.env\meraki-ports-with-mac.env`
+	if got := defaultEnvFile(); got != want {
+		t.Errorf("defaultEnvFile() = %q, want %q", got, want)
+	}
+}
+
+func TestDefaultEnvFile_NoHomeDrive(t *testing.T) {
+	t.Setenv("HOMEDRIVE", "")
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skip("cannot determine home dir:", err)
 	}
-	want := filepath.Join(home, ".env.find-mac")
-	got := resolveEnvFile()
-	if got != want {
-		t.Errorf("resolveEnvFile() = %q, want %q", got, want)
+	want := filepath.Join(home, ".env", "meraki-ports-with-mac.env")
+	if got := defaultEnvFile(); got != want {
+		t.Errorf("defaultEnvFile() = %q, want %q", got, want)
 	}
 }
 
