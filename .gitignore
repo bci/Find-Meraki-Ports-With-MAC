@@ -40,3 +40,10 @@ Thumbs.db
 *.log
 Find-Meraki-Ports-With-MAC.log
 findmac
+
+# Environment / credential files. Real ones live per user in H:\.env\<tool>.env,
+# never in the repo; only the .env.example template is tracked.
+.env
+.env.*
+*.env
+!.env.example
